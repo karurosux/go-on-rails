@@ -1,0 +1,17 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/worker ./cmd/worker"
+entrypoint = "./tmp/worker"
+include_ext = ["go"]
+exclude_dir = ["tmp", "bin", "web", "node_modules"]
+exclude_regex = ["_test\\.go"]
+exclude_unchanged = true
+
+[log]
+time = false
+
+[misc]
+# The server's Air owns tmp/ cleanup; don't fight over it.
+clean_on_exit = false

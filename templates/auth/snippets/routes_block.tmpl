@@ -1,0 +1,8 @@
+api.Use(auth.CSRF())
+api.Use(auth.Middleware(q))
+auth.Register(api, q)
+
+// Register protected resources on this group (gor g resource <name> ... --protected):
+protected := api.Group("", auth.Require)
+_ = protected
+

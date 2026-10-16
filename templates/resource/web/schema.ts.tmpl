@@ -1,0 +1,9 @@
+import { z } from "zod";
+
+export const {{.Camel}}Schema = z.object({
+{{- range .Fields}}
+  {{.TSName}}: {{.Zod}},
+{{- end}}
+});
+
+export type {{.Pascal}}FormValues = z.infer<typeof {{.Camel}}Schema>;

@@ -1,0 +1,28 @@
+// Code generated placeholder. sqlc overwrites this file the first time you
+// run `gor g resource` (or `sqlc generate`). It exists so the app compiles
+// before any resources are generated.
+package db
+
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+)
+
+// DBTX matches both *pgxpool.Pool and pgx.Tx.
+type DBTX interface {
+	Exec(context.Context, string, ...interface{}) (pgconn.CommandTag, error)
+	Query(context.Context, string, ...interface{}) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...interface{}) pgx.Row
+}
+
+// New creates a Queries value backed by db.
+func New(db DBTX) *Queries {
+	return &Queries{db: db}
+}
+
+// Queries holds generated query methods.
+type Queries struct {
+	db DBTX
+}

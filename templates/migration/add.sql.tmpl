@@ -1,0 +1,17 @@
+-- +goose Up
+{{- range .Fields}}
+{{- if .Nullable}}
+-- TODO: backfill {{.Column}}, then run: ALTER TABLE {{$.Table}} ALTER COLUMN {{.Column}} SET NOT NULL;
+ALTER TABLE {{$.Table}} ADD COLUMN {{.Column}} {{.PgType}}{{if .IsRef}} REFERENCES {{.RefTable}} (id){{end}};
+{{- else}}
+ALTER TABLE {{$.Table}} ADD COLUMN {{.Column}} {{.PgType}} NOT NULL DEFAULT {{.DefaultSQL}};
+{{- end}}
+{{- if .IsRef}}
+CREATE INDEX {{$.Table}}_{{.Column}}_idx ON {{$.Table}} ({{.Column}});
+{{- end}}
+{{- end}}
+
+-- +goose Down
+{{- range .Fields}}
+ALTER TABLE {{$.Table}} DROP COLUMN {{.Column}};
+{{- end}}

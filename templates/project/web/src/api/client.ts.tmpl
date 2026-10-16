@@ -1,0 +1,48 @@
+// Shared fetch wrapper. Every API error becomes an ApiError carrying the
+// server's error envelope: {"error": {"message", "fields"}}.
+
+export class ApiError extends Error {
+  status: number;
+  fields?: Record<string, string>;
+
+  constructor(status: number, message: string, fields?: Record<string, string>) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.fields = fields;
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: { "Content-Type": "application/json", ...init?.headers },
+  });
+
+  if (!res.ok) {
+    let message = res.statusText;
+    let fields: Record<string, string> | undefined;
+    try {
+      const body = await res.json();
+      message = body?.error?.message ?? message;
+      fields = body?.error?.fields;
+    } catch {
+      // response body was not JSON; keep the status text
+    }
+    throw new ApiError(res.status, message, fields);
+  }
+
+  if (res.status === 204) {
+    return undefined as T;
+  }
+  return res.json() as Promise<T>;
+}
+
+export const api = {
+  get: <T>(path: string) => request<T>(path),
+  post: <T>(path: string, body: unknown) =>
+    request<T>(path, { method: "POST", body: JSON.stringify(body) }),
+  patch: <T>(path: string, body: unknown) =>
+    request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
+  delete: (path: string) => request<void>(path, { method: "DELETE" }),
+};

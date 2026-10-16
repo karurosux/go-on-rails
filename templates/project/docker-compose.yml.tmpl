@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: {{.AppName}}_dev
+    ports:
+      # Host port derived from the app name, so several apps (and a local
+      # Postgres on 5432) can run side by side. If you change it, update
+      # DATABASE_URL in .env too.
+      - "{{.DBPort}}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d {{.AppName}}_dev"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+volumes:
+  pgdata:

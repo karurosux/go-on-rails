@@ -1,0 +1,6 @@
+<Route path="{{.Plural}}">
+  <Route index element={<{{.PluralPascal}}List />} />
+  <Route path="new" element={<{{.Pascal}}Form />} />
+  <Route path=":id" element={<{{.Pascal}}Detail />} />
+  <Route path=":id/edit" element={<{{.Pascal}}Form />} />
+</Route>

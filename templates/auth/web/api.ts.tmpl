@@ -1,0 +1,64 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api, ApiError } from "./client";
+
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  createdAt: string;
+}
+
+export interface LoginInput {
+  email: string;
+  password: string;
+}
+
+export interface RegisterInput {
+  email: string;
+  password: string;
+  name: string;
+}
+
+const meKey = ["auth", "me"] as const;
+
+// useMe returns the signed-in user, or null when not signed in.
+export function useMe() {
+  return useQuery({
+    queryKey: meKey,
+    queryFn: async (): Promise<User | null> => {
+      try {
+        return await api.get<User>("/api/auth/me");
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) return null;
+        throw err;
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+  });
+}
+
+export function useLogin() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: LoginInput) => api.post<User>("/api/auth/login", input),
+    onSuccess: (user) => queryClient.setQueryData(meKey, user),
+  });
+}
+
+export function useRegister() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: RegisterInput) => api.post<User>("/api/auth/register", input),
+    onSuccess: (user) => queryClient.setQueryData(meKey, user),
+  });
+}
+
+export function useLogout() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<void>("/api/auth/logout", {}),
+    onSuccess: () => queryClient.setQueryData(meKey, null),
+  });
+}

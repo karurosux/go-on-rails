@@ -1,0 +1,50 @@
+package {{.PkgName}}
+
+import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+{{if .HasRequired}}	"strings"
+{{end}}	"testing"
+
+	"github.com/labstack/echo/v4"
+
+	"{{.Module}}/internal/httpx"
+)
+
+// newTestServer wires the handler with the real validator and error handler
+// but no database — these tests cover request handling up to the DB call.
+func newTestServer() *echo.Echo {
+	e := echo.New()
+	e.Validator = httpx.NewValidator()
+	e.HTTPErrorHandler = httpx.ErrorHandler(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	Register(e.Group("/api"), nil)
+	return e
+}
+
+func TestGet{{.Pascal}}RejectsInvalidID(t *testing.T) {
+	e := newTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/api/{{.Plural}}/not-a-uuid", nil)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body)
+	}
+}
+{{if .HasRequired}}
+func TestCreate{{.Pascal}}RejectsMissingFields(t *testing.T) {
+	e := newTestServer()
+	req := httptest.NewRequest(http.MethodPost, "/api/{{.Plural}}", strings.NewReader("{}"))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body)
+	}
+}
+{{end}}

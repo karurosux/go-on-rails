@@ -1,0 +1,155 @@
+package auth
+
+import (
+	"errors"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/labstack/echo/v4"
+
+	dbgen "{{.Module}}/internal/db/gen"
+	"{{.Module}}/internal/httpx"
+)
+
+// Handler serves the /api/auth endpoints.
+type Handler struct {
+	q      *dbgen.Queries
+	secure bool // Secure cookies outside development
+}
+
+// Register mounts the auth routes on the API group. Only register and
+// login are public; everything else requires a session.
+func Register(g *echo.Group, q *dbgen.Queries) {
+	h := &Handler{q: q, secure: os.Getenv("APP_ENV") == "production"}
+	g.POST("/auth/register", h.register)
+	g.POST("/auth/login", h.login)
+	g.POST("/auth/logout", h.logout, Require)
+	g.GET("/auth/me", h.me, Require)
+}
+
+// UserResponse is the public shape of a user — never the password hash.
+type UserResponse struct {
+	ID        uuid.UUID `json:"id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func toResponse(u *dbgen.User) UserResponse {
+	return UserResponse{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role, CreatedAt: u.CreatedAt}
+}
+
+// RegisterInput is the POST /api/auth/register request body.
+type RegisterInput struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required,min=8"`
+	Name     string `json:"name"`
+}
+
+// LoginInput is the POST /api/auth/login request body.
+type LoginInput struct {
+	Email    string `json:"email" validate:"required,email"`
+	Password string `json:"password" validate:"required"`
+}
+
+func (h *Handler) register(c echo.Context) error {
+	var in RegisterInput
+	if err := httpx.Bind(c, &in); err != nil {
+		return err
+	}
+	hash, err := HashPassword(in.Password)
+	if err != nil {
+		return err
+	}
+	user, err := h.q.CreateUser(c.Request().Context(), dbgen.CreateUserParams{
+		Email:        in.Email,
+		PasswordHash: hash,
+		Name:         in.Name,
+	})
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "email is already taken")
+	}
+	if err != nil {
+		return err
+	}
+	if err := h.startSession(c, user.ID); err != nil {
+		return err
+	}
+	return c.JSON(http.StatusCreated, toResponse(&user))
+}
+
+func (h *Handler) login(c echo.Context) error {
+	var in LoginInput
+	if err := httpx.Bind(c, &in); err != nil {
+		return err
+	}
+	ctx := c.Request().Context()
+	user, err := h.q.GetUserByEmail(ctx, in.Email)
+	if errors.Is(err, pgx.ErrNoRows) {
+		EqualizeTiming(in.Password) // unknown emails must take as long as wrong passwords
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid email or password")
+	}
+	if err == nil && !CheckPassword(user.PasswordHash, in.Password) {
+		return echo.NewHTTPError(http.StatusUnauthorized, "invalid email or password")
+	}
+	if err != nil {
+		return err
+	}
+	_ = h.q.DeleteExpiredSessions(ctx) // opportunistic cleanup
+	if err := h.startSession(c, user.ID); err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, toResponse(&user))
+}
+
+func (h *Handler) logout(c echo.Context) error {
+	if cookie, err := c.Cookie(CookieName); err == nil && cookie.Value != "" {
+		_ = h.q.DeleteSession(c.Request().Context(), HashToken(cookie.Value))
+	}
+	c.SetCookie(&http.Cookie{
+		Name:     CookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	return c.NoContent(http.StatusNoContent)
+}
+
+// me relies on the Require middleware, so CurrentUser is never nil here.
+func (h *Handler) me(c echo.Context) error {
+	return c.JSON(http.StatusOK, toResponse(CurrentUser(c)))
+}
+
+func (h *Handler) startSession(c echo.Context, userID uuid.UUID) error {
+	token, hash, err := NewToken()
+	if err != nil {
+		return err
+	}
+	expires := time.Now().Add(SessionDuration)
+	if err := h.q.CreateSession(c.Request().Context(), dbgen.CreateSessionParams{
+		TokenHash: hash,
+		UserID:    userID,
+		ExpiresAt: expires,
+	}); err != nil {
+		return err
+	}
+	c.SetCookie(&http.Cookie{
+		Name:     CookieName,
+		Value:    token,
+		Path:     "/",
+		Expires:  expires,
+		HttpOnly: true,
+		Secure:   h.secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+	return nil
+}

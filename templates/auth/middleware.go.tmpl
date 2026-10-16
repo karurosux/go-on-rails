@@ -1,0 +1,111 @@
+package auth
+
+import (
+	"net/http"
+	"net/url"
+	"os"
+	"time"
+
+	"github.com/labstack/echo/v4"
+
+	dbgen "{{.Module}}/internal/db/gen"
+)
+
+// CSRF rejects state-changing requests from other origins, complementing
+// the SameSite=Lax session cookie. Browsers always send an Origin header on
+// cross-site requests; same-origin requests and non-browser clients (no
+// Origin header) pass. If you deploy behind a proxy that rewrites the Host
+// header, adjust the comparison here.
+func CSRF() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			switch c.Request().Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				return next(c)
+			}
+			origin := c.Request().Header.Get("Origin")
+			if origin == "" {
+				return next(c)
+			}
+			parsed, err := url.Parse(origin)
+			if err != nil || parsed.Host != c.Request().Host {
+				return echo.NewHTTPError(http.StatusForbidden, "cross-origin request rejected")
+			}
+			return next(c)
+		}
+	}
+}
+
+// Middleware resolves the session cookie into the current user, if any.
+// It never rejects a request — combine it with Require or RequireRole.
+// Sessions slide: activity in the second half of a session's lifetime
+// extends it, so active users stay signed in and idle ones expire.
+func Middleware(q *dbgen.Queries) echo.MiddlewareFunc {
+	secure := os.Getenv("APP_ENV") == "production"
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			cookie, err := c.Cookie(CookieName)
+			if err == nil && cookie.Value != "" {
+				hash := HashToken(cookie.Value)
+				row, err := q.GetSessionUser(c.Request().Context(), hash)
+				if err == nil && row.ExpiresAt.After(time.Now()) {
+					user := row.User
+					c.Set(userContextKey, &user)
+					if time.Until(row.ExpiresAt) < SessionDuration/2 {
+						expires := time.Now().Add(SessionDuration)
+						if q.TouchSession(c.Request().Context(), dbgen.TouchSessionParams{
+							TokenHash: hash,
+							ExpiresAt: expires,
+						}) == nil {
+							c.SetCookie(&http.Cookie{
+								Name:     CookieName,
+								Value:    cookie.Value,
+								Path:     "/",
+								Expires:  expires,
+								HttpOnly: true,
+								Secure:   secure,
+								SameSite: http.SameSiteLaxMode,
+							})
+						}
+					}
+				}
+			}
+			return next(c)
+		}
+	}
+}
+
+// CurrentUser returns the signed-in user, or nil.
+func CurrentUser(c echo.Context) *dbgen.User {
+	user, _ := c.Get(userContextKey).(*dbgen.User)
+	return user
+}
+
+// Require rejects requests without a signed-in user.
+func Require(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if CurrentUser(c) == nil {
+			return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
+		}
+		return next(c)
+	}
+}
+
+// RequireRole rejects requests whose user has none of the given roles.
+// Example: admin := api.Group("/admin", auth.RequireRole("admin"))
+func RequireRole(roles ...string) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			user := CurrentUser(c)
+			if user == nil {
+				return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
+			}
+			for _, role := range roles {
+				if user.Role == role {
+					return next(c)
+				}
+			}
+			return echo.NewHTTPError(http.StatusForbidden, "insufficient role")
+		}
+	}
+}

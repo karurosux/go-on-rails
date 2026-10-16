@@ -1,0 +1,92 @@
+package auth
+
+import (
+	"io"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/labstack/echo/v4"
+
+	"{{.Module}}/internal/httpx"
+)
+
+// newTestServer wires the auth routes with the real validator and error
+// handler but no database — these tests cover request handling up front.
+func newTestServer() *echo.Echo {
+	e := echo.New()
+	e.Validator = httpx.NewValidator()
+	e.HTTPErrorHandler = httpx.ErrorHandler(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	api := e.Group("/api")
+	api.Use(CSRF())
+	api.Use(Middleware(nil)) // no cookie in these tests, so the nil Queries is never used
+	Register(api, nil)
+	return e
+}
+
+func TestCSRFRejectsCrossOrigin(t *testing.T) {
+	e := newTestServer()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.Header.Set("Origin", "https://evil.example")
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestCSRFAllowsSameOrigin(t *testing.T) {
+	e := newTestServer()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
+	req.Header.Set("Origin", "http://"+req.Host)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	if rec.Code == http.StatusForbidden {
+		t.Fatalf("same-origin request was rejected: %s", rec.Body)
+	}
+}
+
+func TestRegisterRejectsInvalidInput(t *testing.T) {
+	e := newTestServer()
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/register",
+		strings.NewReader(`{"email":"not-an-email","password":"short"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestMeRequiresSession(t *testing.T) {
+	e := newTestServer()
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/me", nil)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRequireRejectsAnonymous(t *testing.T) {
+	e := newTestServer()
+	e.GET("/api/secret", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, Require)
+	req := httptest.NewRequest(http.MethodGet, "/api/secret", nil)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body)
+	}
+}

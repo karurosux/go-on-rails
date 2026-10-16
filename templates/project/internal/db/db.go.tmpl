@@ -1,0 +1,25 @@
+// Package db owns the pgx connection pool. Generated query code lives in
+// the gen subpackage (run `gor g resource` / sqlc generate).
+package db
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+)
+
+// Connect opens a pgx pool and verifies the database is reachable.
+func Connect(ctx context.Context, url string) (*pgxpool.Pool, error) {
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		return nil, fmt.Errorf("parse DATABASE_URL: %w", err)
+	}
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
+		return nil, fmt.Errorf("cannot reach database: %w (is Postgres running? try `gor db setup`)", err)
+	}
+	return pool, nil
+}

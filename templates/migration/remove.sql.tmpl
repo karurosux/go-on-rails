@@ -1,0 +1,10 @@
+-- +goose Up
+{{- range .Fields}}
+ALTER TABLE {{$.Table}} DROP COLUMN {{.Column}};
+{{- end}}
+
+-- +goose Down
+-- Columns are restored nullable; the dropped data is gone.
+{{- range .Fields}}
+ALTER TABLE {{$.Table}} ADD COLUMN {{.Column}} {{.PgType}}{{if .IsRef}} REFERENCES {{.RefTable}} (id){{end}};
+{{- end}}

@@ -1,0 +1,173 @@
+// Package {{.PkgName}} implements the /api/{{.Plural}} REST endpoints.
+package {{.PkgName}}
+
+import (
+	"errors"
+	"net/http"
+	"strconv"
+{{if .HasTimestamp}}	"time"
+{{end}}
+	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/labstack/echo/v4"
+
+	dbgen "{{.Module}}/internal/db/gen"
+	"{{.Module}}/internal/httpx"
+)
+
+// Handler serves the {{.Name}} endpoints.
+type Handler struct {
+{{if .Service}}	svc *Service
+{{else}}	q *dbgen.Queries
+{{end}}}
+
+// Register mounts the {{.Name}} routes on the API group.
+func Register(g *echo.Group, q *dbgen.Queries) {
+{{if .Service}}	h := &Handler{svc: NewService(q)}
+{{else}}	h := &Handler{q: q}
+{{end}}	g.GET("/{{.Plural}}", h.List)
+	g.POST("/{{.Plural}}", h.Create)
+	g.GET("/{{.Plural}}/:id", h.Get)
+	g.PATCH("/{{.Plural}}/:id", h.Update)
+	g.DELETE("/{{.Plural}}/:id", h.Delete)
+}
+
+// CreateInput is the POST /api/{{.Plural}} request body.
+type CreateInput struct {
+{{- range .Fields}}
+	{{.GoField}} {{.GoType}} `json:"{{.JSONName}}"{{if .Required}} validate:"required"{{end}}`
+{{- end}}
+}
+
+// UpdateInput is the PATCH request body; nil fields are left unchanged.
+type UpdateInput struct {
+{{- range .Fields}}
+	{{.GoField}} {{.GoPtrType}} `json:"{{.JSONName}}"`
+{{- end}}
+}
+
+type listResponse struct {
+	Data []dbgen.{{.Pascal}} `json:"data"`
+	Meta listMeta            `json:"meta"`
+}
+
+type listMeta struct {
+	Page    int   `json:"page"`
+	PerPage int   `json:"perPage"`
+	Total   int64 `json:"total"`
+}
+
+// List handles GET /api/{{.Plural}}?page=1&perPage=25.
+func (h *Handler) List(c echo.Context) error {
+	page, _ := strconv.Atoi(c.QueryParam("page"))
+	if page < 1 {
+		page = 1
+	}
+	perPage, _ := strconv.Atoi(c.QueryParam("perPage"))
+	if perPage < 1 || perPage > 100 {
+		perPage = 25
+	}
+
+	ctx := c.Request().Context()
+{{if .Service}}	items, total, err := h.svc.List(ctx, int32(perPage), int32((page-1)*perPage))
+	if err != nil {
+		return err
+	}
+{{else}}	items, err := h.q.List{{.PluralPascal}}(ctx, dbgen.List{{.PluralPascal}}Params{
+		Limit:  int32(perPage),
+		Offset: int32((page - 1) * perPage),
+	})
+	if err != nil {
+		return err
+	}
+	total, err := h.q.Count{{.PluralPascal}}(ctx)
+	if err != nil {
+		return err
+	}
+{{end}}	if items == nil {
+		items = []dbgen.{{.Pascal}}{}
+	}
+	return c.JSON(http.StatusOK, listResponse{
+		Data: items,
+		Meta: listMeta{Page: page, PerPage: perPage, Total: total},
+	})
+}
+
+// Get handles GET /api/{{.Plural}}/:id.
+func (h *Handler) Get(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid id")
+	}
+{{if .Service}}	item, err := h.svc.Get(c.Request().Context(), id)
+{{else}}	item, err := h.q.Get{{.Pascal}}(c.Request().Context(), id)
+{{end}}	if errors.Is(err, pgx.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "{{.HumanLower}} not found")
+	}
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+// Create handles POST /api/{{.Plural}}.
+func (h *Handler) Create(c echo.Context) error {
+	var in CreateInput
+	if err := httpx.Bind(c, &in); err != nil {
+		return err
+	}
+{{if .Service}}	item, err := h.svc.Create(c.Request().Context(), in)
+{{else}}{{if .SingleField}}	item, err := h.q.Create{{.Pascal}}(c.Request().Context(), in.{{(index .Fields 0).GoField}})
+{{else}}	item, err := h.q.Create{{.Pascal}}(c.Request().Context(), dbgen.Create{{.Pascal}}Params{
+{{- range .Fields}}
+		{{.GoField}}: in.{{.GoField}},
+{{- end}}
+	})
+{{end}}{{end}}	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusCreated, item)
+}
+
+// Update handles PATCH /api/{{.Plural}}/:id.
+func (h *Handler) Update(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid id")
+	}
+	var in UpdateInput
+	if err := httpx.Bind(c, &in); err != nil {
+		return err
+	}
+{{if .Service}}	item, err := h.svc.Update(c.Request().Context(), id, in)
+{{else}}	item, err := h.q.Update{{.Pascal}}(c.Request().Context(), dbgen.Update{{.Pascal}}Params{
+		ID: id,
+{{- range .Fields}}
+		{{.GoField}}: in.{{.GoField}},
+{{- end}}
+	})
+{{end}}	if errors.Is(err, pgx.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusNotFound, "{{.HumanLower}} not found")
+	}
+	if err != nil {
+		return err
+	}
+	return c.JSON(http.StatusOK, item)
+}
+
+// Delete handles DELETE /api/{{.Plural}}/:id.
+func (h *Handler) Delete(c echo.Context) error {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid id")
+	}
+{{if .Service}}	rows, err := h.svc.Delete(c.Request().Context(), id)
+{{else}}	rows, err := h.q.Delete{{.Pascal}}(c.Request().Context(), id)
+{{end}}	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return echo.NewHTTPError(http.StatusNotFound, "{{.HumanLower}} not found")
+	}
+	return c.NoContent(http.StatusNoContent)
+}

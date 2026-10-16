@@ -1,0 +1,19 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+# Regenerate sqlc code before each build so editing queries/*.sql Just Works.
+pre_cmd = ["sqlc generate"]
+cmd = "go build -o ./tmp/main ./cmd/server"
+entrypoint = "./tmp/main"
+include_ext = ["go", "sql", "toml"]
+exclude_dir = ["tmp", "bin", "web", "node_modules"]
+exclude_regex = ["_test\\.go"]
+# sqlc rewrites these on every build; watching them would loop forever.
+exclude_unchanged = true
+
+[log]
+time = false
+
+[misc]
+clean_on_exit = true

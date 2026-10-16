@@ -1,0 +1,11 @@
+// Package app holds the embedded frontend build. The web/dist directory is
+// populated by `gor build`; in development it only contains a .gitkeep so the
+// backend always compiles.
+package app
+
+import "embed"
+
+// DistFS is the built React app, embedded into the production binary.
+//
+//go:embed all:web/dist
+var DistFS embed.FS

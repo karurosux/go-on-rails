@@ -1,0 +1,29 @@
+-- name: List{{.PluralPascal}} :many
+SELECT * FROM {{.Table}}
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2;
+
+-- name: Count{{.PluralPascal}} :one
+SELECT count(*) FROM {{.Table}};
+
+-- name: Get{{.Pascal}} :one
+SELECT * FROM {{.Table}}
+WHERE id = $1;
+
+-- name: Create{{.Pascal}} :one
+INSERT INTO {{.Table}} ({{.CreateCols}})
+VALUES ({{.CreatePlaceholders}})
+RETURNING *;
+
+-- name: Update{{.Pascal}} :one
+UPDATE {{.Table}} SET
+{{- range .Fields}}
+    {{.Column}} = coalesce(sqlc.narg('{{.Column}}'), {{.Column}}),
+{{- end}}
+    updated_at = now()
+WHERE id = sqlc.arg('id')
+RETURNING *;
+
+-- name: Delete{{.Pascal}} :execrows
+DELETE FROM {{.Table}}
+WHERE id = $1;

@@ -1,0 +1,38 @@
+IMAGE ?= {{.AppName}}:latest
+
+.PHONY: dev build test image image-run image-push db-setup db-reset db-migrate db-rollback db-status
+
+dev: ## Run the Go server (Air) and Vite together
+	gor dev
+
+build: ## Build one production binary with the frontend embedded
+	gor build
+
+test: ## Run backend tests
+	go test ./...
+
+image: ## Build the production Docker image (override tag with IMAGE=...)
+	gor build --tag $(IMAGE)
+
+image-run: ## Run the image locally against the dev Postgres (gor db setup first)
+	docker run --rm -p 8080:8080 \
+		-e DATABASE_URL='postgres://postgres:postgres@host.docker.internal:{{.DBPort}}/{{.AppName}}_dev?sslmode=disable' \
+		$(IMAGE)
+
+image-push: ## Push the image to a registry: make image-push IMAGE=registry.example.com/me/{{.AppName}}:v1
+	docker push $(IMAGE)
+
+db-setup: ## Start Postgres (Docker) and migrate
+	gor db setup
+
+db-reset: ## Wipe the dev database and set up fresh
+	gor db reset
+
+db-migrate:
+	gor db migrate
+
+db-rollback:
+	gor db rollback
+
+db-status:
+	gor db status

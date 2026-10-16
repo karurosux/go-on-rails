@@ -1,0 +1,90 @@
+// The worker process: runs background jobs from the Postgres queue.
+// Start it with `gor dev` (alongside the server) or `./bin/{{.AppName}}-worker`
+// in production.
+package main
+
+import (
+	"context"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
+
+	"{{.Module}}/internal/config"
+	"{{.Module}}/internal/db"
+	dbgen "{{.Module}}/internal/db/gen"
+	"{{.Module}}/internal/jobs"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+
+	var handler slog.Handler
+	if cfg.IsDev() {
+		handler = slog.NewTextHandler(os.Stdout, nil)
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, nil)
+	}
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
+	ctx := context.Background()
+	pool, err := db.Connect(ctx, cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("database connection failed", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+
+	driver := riverpgxv5.New(pool)
+
+	// Keep River's own tables up to date; idempotent and fast.
+	migrator, err := rivermigrate.New(driver, nil)
+	if err != nil {
+		logger.Error("river migrator failed", "error", err)
+		os.Exit(1)
+	}
+	if _, err := migrator.Migrate(ctx, rivermigrate.DirectionUp, &rivermigrate.MigrateOpts{}); err != nil {
+		logger.Error("river migrations failed", "error", err)
+		os.Exit(1)
+	}
+
+	client, err := river.NewClient(driver, &river.Config{
+		Logger: logger,
+		Queues: map[string]river.QueueConfig{
+			river.QueueDefault: {MaxWorkers: 10},
+		},
+		Workers:      jobs.Workers(dbgen.New(pool)),
+		PeriodicJobs: jobs.PeriodicJobs(),
+	})
+	if err != nil {
+		logger.Error("river client failed", "error", err)
+		os.Exit(1)
+	}
+
+	if err := client.Start(ctx); err != nil {
+		logger.Error("worker start failed", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("worker running", "env", cfg.Env)
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	logger.Info("worker shutting down")
+	stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if err := client.Stop(stopCtx); err != nil {
+		logger.Error("graceful stop failed", "error", err)
+	}
+}

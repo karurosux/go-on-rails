@@ -1,0 +1,36 @@
+package jobs
+
+import (
+	"context"
+	"log/slog"
+
+	"github.com/riverqueue/river"
+
+	dbgen "{{.Module}}/internal/db/gen"
+)
+
+// {{.Pascal}}Args are the inputs for the {{.Name}} job, stored as JSON on
+// the queue. Keep them small — IDs, not whole records; load fresh data from
+// the database inside Work.
+type {{.Pascal}}Args struct {
+	// e.g. UserID uuid.UUID `json:"userId"`
+}
+
+// Kind identifies this job type in the queue.
+func ({{.Pascal}}Args) Kind() string { return "{{.Name}}" }
+
+// {{.Pascal}}Worker runs {{.Name}} jobs.
+type {{.Pascal}}Worker struct {
+	river.WorkerDefaults[{{.Pascal}}Args]
+	q *dbgen.Queries
+}
+
+// Work performs one {{.Name}} job. Returning an error retries it with
+// exponential backoff; returning nil completes it.
+func (w *{{.Pascal}}Worker) Work(ctx context.Context, job *river.Job[{{.Pascal}}Args]) error {
+	slog.InfoContext(ctx, "running {{.Name}}", "job_id", job.ID)
+	// Query with w.q, e.g.:
+	//   user, err := w.q.GetUserByID(ctx, job.Args.UserID)
+	// TODO: implement the job
+	return nil
+}

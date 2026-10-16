@@ -1,0 +1,58 @@
+package jobs
+
+import (
+	"context"
+	"sync"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+
+	"{{.Module}}/internal/config"
+)
+
+var (
+	clientOnce sync.Once
+	client     *river.Client[pgx.Tx]
+	clientErr  error
+)
+
+// Enqueue inserts a job for the worker process to run:
+//
+//	jobs.Enqueue(c.Request().Context(), jobs.SendWelcomeEmailArgs{UserID: id})
+//
+// The job is stored in Postgres; delivery is as durable as your database.
+func Enqueue(ctx context.Context, args river.JobArgs) error {
+	c, err := insertClient(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = c.Insert(ctx, args, nil)
+	return err
+}
+
+// insertClient lazily builds an insert-only River client with a small pool
+// of its own, so enqueueing needs no extra wiring in the web process.
+func insertClient(ctx context.Context) (*river.Client[pgx.Tx], error) {
+	clientOnce.Do(func() {
+		cfg, err := config.Load()
+		if err != nil {
+			clientErr = err
+			return
+		}
+		poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+		if err != nil {
+			clientErr = err
+			return
+		}
+		poolCfg.MaxConns = 2
+		pool, err := pgxpool.NewWithConfig(ctx, poolCfg)
+		if err != nil {
+			clientErr = err
+			return
+		}
+		client, clientErr = river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	})
+	return client, clientErr
+}

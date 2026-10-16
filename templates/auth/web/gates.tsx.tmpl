@@ -1,0 +1,27 @@
+import type { ReactNode } from "react";
+import { useMe } from "../../api/auth";
+
+// Inline visibility gates for conditional UI inside a page. Route-level
+// guards (redirects) live in RequireAuth.tsx.
+//
+//   <SignedIn><Button>New post</Button></SignedIn>
+//   <SignedOut><Link to="/login">Sign in to comment</Link></SignedOut>
+//   <RoleGate role="admin"><Button>Delete</Button></RoleGate>
+//
+// These hide UI only — the API must stay the source of truth, so keep the
+// matching routes behind auth.Require / auth.RequireRole on the backend.
+
+export function SignedIn({ children }: { children: ReactNode }) {
+  const { data: user } = useMe();
+  return user ? <>{children}</> : null;
+}
+
+export function SignedOut({ children }: { children: ReactNode }) {
+  const { data: user, isLoading } = useMe();
+  return !isLoading && !user ? <>{children}</> : null;
+}
+
+export function RoleGate({ role, children }: { role: string; children: ReactNode }) {
+  const { data: user } = useMe();
+  return user && user.role === role ? <>{children}</> : null;
+}

@@ -1,0 +1,21 @@
+package jobs
+
+import (
+	"context"
+	"testing"
+
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
+)
+
+func Test{{.Pascal}}Worker(t *testing.T) {
+	worker := &{{.Pascal}}Worker{}
+	job := &river.Job[{{.Pascal}}Args]{
+		JobRow: &rivertype.JobRow{ID: 1},
+		Args:   {{.Pascal}}Args{},
+	}
+
+	if err := worker.Work(context.Background(), job); err != nil {
+		t.Fatalf("Work returned an error: %v", err)
+	}
+}

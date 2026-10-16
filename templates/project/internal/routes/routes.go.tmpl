@@ -1,0 +1,23 @@
+// Package routes registers every API route. `gor g resource` appends to the
+// marked sections below — keep the gor:imports and gor:routes markers.
+package routes
+
+import (
+	"net/http"
+
+	"github.com/labstack/echo/v4"
+
+	dbgen "{{.Module}}/internal/db/gen"
+	// gor:imports
+)
+
+// Register mounts all application routes.
+func Register(e *echo.Echo, q *dbgen.Queries) {
+	api := e.Group("/api")
+
+	api.GET("/healthz", func(c echo.Context) error {
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	})
+
+	// gor:routes
+}

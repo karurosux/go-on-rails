@@ -1,0 +1,60 @@
+// Package middleware holds the app's custom middleware. Standard concerns
+// (request ID, recovery, security headers, rate limiting, CORS) use echo's
+// built-ins, wired up in cmd/server/main.go.
+package middleware
+
+import (
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"strings"
+
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+)
+
+// RequestLogger logs one structured line per request via slog.
+func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
+	return middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogStatus:    true,
+		LogMethod:    true,
+		LogURI:       true,
+		LogLatency:   true,
+		LogRequestID: true,
+		LogError:     true,
+		LogValuesFunc: func(c echo.Context, v middleware.RequestLoggerValues) error {
+			level := slog.LevelInfo
+			if v.Status >= 500 {
+				level = slog.LevelError
+			}
+			attrs := []any{
+				"method", v.Method,
+				"uri", v.URI,
+				"status", v.Status,
+				"latency", v.Latency.String(),
+				"request_id", v.RequestID,
+			}
+			if v.Error != nil {
+				attrs = append(attrs, "error", v.Error.Error())
+			}
+			logger.Log(c.Request().Context(), level, "request", attrs...)
+			return nil
+		},
+	})
+}
+
+// SPA serves the embedded frontend build with an index.html fallback so
+// client-side routes work, skipping /api paths.
+func SPA(dist fs.FS) echo.MiddlewareFunc {
+	sub, err := fs.Sub(dist, "web/dist")
+	if err != nil {
+		panic("web/dist missing from embedded filesystem: " + err.Error())
+	}
+	return middleware.StaticWithConfig(middleware.StaticConfig{
+		Filesystem: http.FS(sub),
+		HTML5:      true,
+		Skipper: func(c echo.Context) bool {
+			return strings.HasPrefix(c.Request().URL.Path, "/api")
+		},
+	})
+}

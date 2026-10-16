@@ -1,0 +1,123 @@
+// Package httpx provides JSON request decoding, validation, and the
+// consistent error envelope every API response uses:
+//
+//	{"error": {"message": "...", "fields": {"title": "is required"}}}
+package httpx
+
+import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"reflect"
+	"strings"
+
+	"github.com/go-playground/validator/v10"
+	"github.com/labstack/echo/v4"
+)
+
+// Validator adapts go-playground/validator to echo.Validator.
+type Validator struct {
+	v *validator.Validate
+}
+
+// NewValidator builds the app's validator. Field names in error messages use
+// the struct's json tag, so they match what the client sent.
+func NewValidator() *Validator {
+	v := validator.New(validator.WithRequiredStructEnabled())
+	v.RegisterTagNameFunc(func(fld reflect.StructField) string {
+		name := strings.SplitN(fld.Tag.Get("json"), ",", 2)[0]
+		if name == "-" || name == "" {
+			return fld.Name
+		}
+		return name
+	})
+	return &Validator{v: v}
+}
+
+// Validate implements echo.Validator.
+func (val *Validator) Validate(i any) error {
+	return val.v.Struct(i)
+}
+
+// Bind decodes the JSON body into v and validates it. Handlers return the
+// error as-is; ErrorHandler turns it into a 400/422 JSON response.
+func Bind(c echo.Context, v any) error {
+	if err := c.Bind(v); err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid request body")
+	}
+	if err := c.Validate(v); err != nil {
+		return err
+	}
+	return nil
+}
+
+type errorPayload struct {
+	Message string            `json:"message"`
+	Fields  map[string]string `json:"fields,omitempty"`
+}
+
+type errorEnvelope struct {
+	Error errorPayload `json:"error"`
+}
+
+// ErrorHandler returns echo's central error handler: it maps validation
+// errors to 422 with per-field messages, echo.HTTPError to its status, and
+// everything else to an opaque 500 (logged with details).
+func ErrorHandler(logger *slog.Logger) echo.HTTPErrorHandler {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return func(err error, c echo.Context) {
+		if c.Response().Committed {
+			return
+		}
+
+		status := http.StatusInternalServerError
+		payload := errorPayload{Message: "internal server error"}
+
+		var ve validator.ValidationErrors
+		var he *echo.HTTPError
+		switch {
+		case errors.As(err, &ve):
+			status = http.StatusUnprocessableEntity
+			payload.Message = "validation failed"
+			payload.Fields = make(map[string]string, len(ve))
+			for _, fe := range ve {
+				payload.Fields[fe.Field()] = ruleMessage(fe)
+			}
+		case errors.As(err, &he):
+			status = he.Code
+			payload.Message = fmt.Sprintf("%v", he.Message)
+		}
+
+		if status >= 500 {
+			logger.Error("request failed",
+				"error", err,
+				"method", c.Request().Method,
+				"path", c.Request().URL.Path,
+			)
+		}
+
+		if c.Request().Method == http.MethodHead {
+			_ = c.NoContent(status)
+			return
+		}
+		_ = c.JSON(status, errorEnvelope{Error: payload})
+	}
+}
+
+func ruleMessage(fe validator.FieldError) string {
+	switch fe.Tag() {
+	case "required":
+		return "is required"
+	case "email":
+		return "must be a valid email"
+	case "min":
+		return fmt.Sprintf("must be at least %s", fe.Param())
+	case "max":
+		return fmt.Sprintf("must be at most %s", fe.Param())
+	default:
+		return fmt.Sprintf("failed %s validation", fe.Tag())
+	}
+}

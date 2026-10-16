@@ -1,0 +1,72 @@
+import { Link, useNavigate, useParams } from "react-router";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { use{{.Pascal}}, useDelete{{.Pascal}} } from "../../api/{{.Plural}}";
+
+export function {{.Pascal}}Detail() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { data: item, isLoading, isError, error } = use{{.Pascal}}(id ?? "");
+  const deleteMutation = useDelete{{.Pascal}}();
+
+  if (isLoading) return <p className="text-muted-foreground">Loading…</p>;
+  if (isError) return <p className="text-destructive">{error.message}</p>;
+  if (!item) return null;
+
+  async function onDelete() {
+    if (!confirm("Delete this {{.HumanLower}}?")) return;
+    await deleteMutation.mutateAsync(item!.id);
+    navigate("/{{.Plural}}");
+  }
+
+  return (
+    <div className="mx-auto max-w-xl">
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">{{.Human}}</h1>
+        <div className="flex gap-2">
+          <Button asChild>
+            <Link to={`/{{.Plural}}/${item.id}/edit`}>Edit</Link>
+          </Button>
+          <Button
+            variant="outline"
+            className="text-destructive hover:text-destructive"
+            onClick={onDelete}
+          >
+            Delete
+          </Button>
+        </div>
+      </div>
+
+      <Card>
+        <CardContent className="p-0 pt-0">
+          <dl className="divide-y [&>div]:px-6 [&>div]:py-3">
+{{- range .Fields}}
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {{.Label}}
+            </dt>
+            <dd className="mt-1 whitespace-pre-wrap">{{.DetailExpr}}</dd>
+          </div>
+{{- end}}
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Created
+            </dt>
+            <dd className="mt-1">{new Date(item.createdAt).toLocaleString()}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Updated
+            </dt>
+            <dd className="mt-1">{new Date(item.updatedAt).toLocaleString()}</dd>
+          </div>
+          </dl>
+        </CardContent>
+      </Card>
+
+      <Button asChild variant="link" className="mt-4 px-0">
+        <Link to="/{{.Plural}}">← Back to {{.PluralHumanLower}}</Link>
+      </Button>
+    </div>
+  );
+}

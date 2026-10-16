@@ -1,0 +1,61 @@
+// Package jobs holds the app's background jobs, run by the worker process
+// (cmd/worker) via River, a Postgres-backed job queue. Enqueue work from
+// anywhere with jobs.Enqueue; add jobs with `gor g job <name>`.
+package jobs
+
+import (
+	"time"
+
+	"github.com/riverqueue/river"
+	"github.com/robfig/cron/v3"
+
+	dbgen "{{.Module}}/internal/db/gen"
+)
+
+// Workers returns the registry of every job worker, each wired with the
+// app's database queries. `gor g job` appends registrations at the marker —
+// keep it.
+func Workers(q *dbgen.Queries) *river.Workers {
+	workers := river.NewWorkers()
+	_ = q
+	// gor:workers
+	return workers
+}
+
+// PeriodicJobs returns jobs that run on a schedule without being enqueued.
+// `gor g job <name> --every <interval>` appends registrations at the marker.
+func PeriodicJobs() []*river.PeriodicJob {
+	var periodic []*river.PeriodicJob
+	// gor:periodic
+	return periodic
+}
+
+// cronJob schedules args on a cron expression: standard 5-field syntax,
+// e.g. "0 9 * * *" = daily at 09:00 in the worker's local time (prefix the
+// expression with CRON_TZ=<zone> to pin a timezone). Validated when the job
+// is generated.
+func cronJob(expr string, args river.JobArgs) *river.PeriodicJob {
+	schedule, err := cron.ParseStandard(expr)
+	if err != nil {
+		panic("jobs: invalid cron expression " + expr + ": " + err.Error())
+	}
+	return river.NewPeriodicJob(
+		schedule,
+		func() (river.JobArgs, *river.InsertOpts) { return args, nil },
+		nil,
+	)
+}
+
+// every schedules args to run each interval (and once at worker startup).
+// The interval is validated when the job is generated.
+func every(interval string, args river.JobArgs) *river.PeriodicJob {
+	d, err := time.ParseDuration(interval)
+	if err != nil {
+		panic("jobs: invalid interval " + interval + ": " + err.Error())
+	}
+	return river.NewPeriodicJob(
+		river.PeriodicInterval(d),
+		func() (river.JobArgs, *river.InsertOpts) { return args, nil },
+		&river.PeriodicJobOpts{RunOnStart: true},
+	)
+}

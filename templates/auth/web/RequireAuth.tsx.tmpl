@@ -1,0 +1,29 @@
+import { Navigate, Outlet, useLocation } from "react-router";
+import { useMe } from "../../api/auth";
+
+// RequireAuth wraps routes that need a signed-in user; anonymous visitors
+// are sent to /login and brought back afterwards.
+export function RequireAuth() {
+  const { data: user, isLoading } = useMe();
+  const location = useLocation();
+
+  if (isLoading) return <p className="text-muted-foreground">Loading…</p>;
+  if (!user) return <Navigate to="/login" state={ { from: location } } replace />;
+  return <Outlet />;
+}
+
+// RequireRole wraps routes that need a specific role, e.g.
+// <Route element={<RequireRole role="admin" />}>...</Route>
+export function RequireRole({ role }: { role: string }) {
+  const { data: user, isLoading } = useMe();
+  const location = useLocation();
+
+  if (isLoading) return <p className="text-muted-foreground">Loading…</p>;
+  if (!user) return <Navigate to="/login" state={ { from: location } } replace />;
+  if (user.role !== role) {
+    return (
+      <p className="text-destructive">You need the {role} role to see this page.</p>
+    );
+  }
+  return <Outlet />;
+}

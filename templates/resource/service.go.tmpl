@@ -1,0 +1,66 @@
+package {{.PkgName}}
+
+import (
+	"context"
+
+	"github.com/google/uuid"
+
+	dbgen "{{.Module}}/internal/db/gen"
+)
+
+// Service holds {{.Name}} business logic between the HTTP handlers and the
+// database. Add domain rules here; handlers stay thin.
+type Service struct {
+	q *dbgen.Queries
+}
+
+// NewService builds a Service backed by the sqlc queries.
+func NewService(q *dbgen.Queries) *Service {
+	return &Service{q: q}
+}
+
+// List returns one page of {{.Plural}} plus the total count.
+func (s *Service) List(ctx context.Context, limit, offset int32) ([]dbgen.{{.Pascal}}, int64, error) {
+	items, err := s.q.List{{.PluralPascal}}(ctx, dbgen.List{{.PluralPascal}}Params{
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		return nil, 0, err
+	}
+	total, err := s.q.Count{{.PluralPascal}}(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	return items, total, nil
+}
+
+// Get returns one {{.Name}} by id.
+func (s *Service) Get(ctx context.Context, id uuid.UUID) (dbgen.{{.Pascal}}, error) {
+	return s.q.Get{{.Pascal}}(ctx, id)
+}
+
+// Create inserts a new {{.Name}}.
+func (s *Service) Create(ctx context.Context, in CreateInput) (dbgen.{{.Pascal}}, error) {
+{{if .SingleField}}	return s.q.Create{{.Pascal}}(ctx, in.{{(index .Fields 0).GoField}})
+{{else}}	return s.q.Create{{.Pascal}}(ctx, dbgen.Create{{.Pascal}}Params{
+{{- range .Fields}}
+		{{.GoField}}: in.{{.GoField}},
+{{- end}}
+	})
+{{end}}}
+
+// Update applies the non-nil fields of in to the {{.Name}} with the given id.
+func (s *Service) Update(ctx context.Context, id uuid.UUID, in UpdateInput) (dbgen.{{.Pascal}}, error) {
+	return s.q.Update{{.Pascal}}(ctx, dbgen.Update{{.Pascal}}Params{
+		ID: id,
+{{- range .Fields}}
+		{{.GoField}}: in.{{.GoField}},
+{{- end}}
+	})
+}
+
+// Delete removes a {{.Name}}, returning how many rows were deleted.
+func (s *Service) Delete(ctx context.Context, id uuid.UUID) (int64, error) {
+	return s.q.Delete{{.Pascal}}(ctx, id)
+}

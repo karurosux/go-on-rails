@@ -1,0 +1,73 @@
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { api } from "./client";
+
+export interface {{.Pascal}} {
+  id: string;
+{{- range .Fields}}
+  {{.TSName}}: {{.TSType}};
+{{- end}}
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface {{.Pascal}}Input {
+{{- range .Fields}}
+  {{.TSName}}: {{.TSType}};
+{{- end}}
+}
+
+export type {{.Pascal}}Update = Partial<{{.Pascal}}Input>;
+
+export interface {{.PluralPascal}}Page {
+  data: {{.Pascal}}[];
+  meta: { page: number; perPage: number; total: number };
+}
+
+const keys = {
+  all: ["{{.Plural}}"] as const,
+  list: (page: number) => ["{{.Plural}}", "list", page] as const,
+  detail: (id: string) => ["{{.Plural}}", "detail", id] as const,
+};
+
+export function use{{.PluralPascal}}(page = 1) {
+  return useQuery({
+    queryKey: keys.list(page),
+    queryFn: () => api.get<{{.PluralPascal}}Page>(`/api/{{.Plural}}?page=${page}`),
+  });
+}
+
+export function use{{.Pascal}}(id: string) {
+  return useQuery({
+    queryKey: keys.detail(id),
+    queryFn: () => api.get<{{.Pascal}}>(`/api/{{.Plural}}/${id}`),
+    enabled: id !== "",
+  });
+}
+
+export function useCreate{{.Pascal}}() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (input: {{.Pascal}}Input) => api.post<{{.Pascal}}>("/api/{{.Plural}}", input),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.all }),
+  });
+}
+
+export function useUpdate{{.Pascal}}() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id: string; input: {{.Pascal}}Update }) =>
+      api.patch<{{.Pascal}}>(`/api/{{.Plural}}/${id}`, input),
+    onSuccess: (item) => {
+      queryClient.invalidateQueries({ queryKey: keys.all });
+      queryClient.setQueryData(keys.detail(item.id), item);
+    },
+  });
+}
+
+export function useDelete{{.Pascal}}() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.delete(`/api/{{.Plural}}/${id}`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: keys.all }),
+  });
+}

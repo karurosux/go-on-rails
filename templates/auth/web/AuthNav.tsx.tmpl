@@ -1,0 +1,43 @@
+import { Link, useNavigate } from "react-router";
+import { Button } from "@/components/ui/button";
+import { useLogout, useMe } from "../../api/auth";
+
+// AuthNav shows the session state in the header: sign in/up links, or the
+// user's email with a sign-out button.
+export function AuthNav() {
+  const { data: user } = useMe();
+  const logout = useLogout();
+  const navigate = useNavigate();
+
+  if (!user) {
+    return (
+      <div className="ml-auto flex items-center gap-4">
+        <Link
+          to="/login"
+          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          Sign in
+        </Link>
+        <Button asChild size="sm">
+          <Link to="/register">Sign up</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="ml-auto flex items-center gap-3">
+      <span className="text-sm text-muted-foreground">{user.email}</span>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={async () => {
+          await logout.mutateAsync();
+          navigate("/");
+        }}
+      >
+        Sign out
+      </Button>
+    </div>
+  );
+}

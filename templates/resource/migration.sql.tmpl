@@ -1,0 +1,17 @@
+-- +goose Up
+-- uuidv7() needs Postgres 18+; on older Postgres use gen_random_uuid().
+CREATE TABLE {{.Table}} (
+    id uuid PRIMARY KEY DEFAULT uuidv7(),
+{{- range .Fields}}
+    {{.Column}} {{.PgType}} NOT NULL{{if .IsRef}} REFERENCES {{.RefTable}} (id){{end}},
+{{- end}}
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+{{- range .Fields}}{{if .IsRef}}
+
+CREATE INDEX {{$.Table}}_{{.Column}}_idx ON {{$.Table}} ({{.Column}});
+{{- end}}{{end}}
+
+-- +goose Down
+DROP TABLE {{.Table}};

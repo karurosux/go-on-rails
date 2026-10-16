@@ -1,0 +1,26 @@
+import { Route, Routes } from "react-router";
+import App from "./App";
+// gor:imports
+
+function Home() {
+  return (
+    <div className="py-16 text-center">
+      <h1 className="text-3xl font-semibold">{{.AppName}}</h1>
+      <p className="mt-3 text-muted-foreground">Generate your first resource:</p>
+      <pre className="mx-auto mt-4 w-fit rounded-lg bg-muted px-4 py-2 text-left text-sm">
+        gor g resource post title:string body:text published:bool
+      </pre>
+    </div>
+  );
+}
+
+export function AppRoutes() {
+  return (
+    <Routes>
+      <Route element={<App />}>
+        <Route index element={<Home />} />
+        {/* gor:routes */}
+      </Route>
+    </Routes>
+  );
+}

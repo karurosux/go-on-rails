@@ -1,0 +1,5 @@
+<Route path="login" element={<LoginPage />} />
+<Route path="register" element={<RegisterPage />} />
+<Route element={<RequireAuth />}>
+  {/* gor:protected-routes */}
+</Route>

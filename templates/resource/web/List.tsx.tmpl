@@ -1,0 +1,104 @@
+import { useState } from "react";
+import { Link } from "react-router";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { use{{.PluralPascal}}, useDelete{{.Pascal}} } from "../../api/{{.Plural}}";
+
+export function {{.PluralPascal}}List() {
+  const [page, setPage] = useState(1);
+  const { data, isLoading, isError, error } = use{{.PluralPascal}}(page);
+  const deleteMutation = useDelete{{.Pascal}}();
+
+  if (isLoading) return <p className="text-muted-foreground">Loading…</p>;
+  if (isError) return <p className="text-destructive">{error.message}</p>;
+  if (!data) return null;
+
+  const { data: items, meta } = data;
+  const totalPages = Math.max(1, Math.ceil(meta.total / meta.perPage));
+
+  return (
+    <div>
+      <div className="mb-6 flex items-center justify-between">
+        <h1 className="text-2xl font-semibold">{{.PluralHuman}}</h1>
+        <Button asChild>
+          <Link to="/{{.Plural}}/new">New {{.HumanLower}}</Link>
+        </Button>
+      </div>
+
+      {items.length === 0 ? (
+        <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
+          No {{.PluralHumanLower}} yet. Create the first one!
+        </p>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+{{- range .Fields}}
+              <TableHead>{{.Label}}</TableHead>
+{{- end}}
+              <TableHead />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((item) => (
+              <TableRow key={item.id}>
+{{- range .Fields}}
+                <TableCell className="max-w-xs truncate">{{.CellExpr}}</TableCell>
+{{- end}}
+                <TableCell className="text-right">
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to={`/{{.Plural}}/${item.id}`}>View</Link>
+                  </Button>
+                  <Button asChild variant="ghost" size="sm">
+                    <Link to={`/{{.Plural}}/${item.id}/edit`}>Edit</Link>
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => {
+                      if (confirm("Delete this {{.HumanLower}}?")) deleteMutation.mutate(item.id);
+                    }}
+                  >
+                    Delete
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+
+      {totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-4 text-sm">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => setPage((p) => p - 1)}
+          >
+            Previous
+          </Button>
+          <span className="text-muted-foreground">
+            Page {page} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}

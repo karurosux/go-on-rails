@@ -1,0 +1,38 @@
+// Package auth provides cookie-session authentication: session tokens,
+// middleware that resolves the current user (middleware.go), guards for
+// protected routes and roles, and the register/login/logout/me endpoints
+// (handler.go).
+package auth
+
+import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"time"
+)
+
+const (
+	// CookieName is the session cookie's name.
+	CookieName = "session"
+	// SessionDuration is how long a session stays valid without activity.
+	SessionDuration = 7 * 24 * time.Hour
+
+	userContextKey = "auth.user"
+)
+
+// NewToken returns a fresh random session token and the hash stored for it.
+// The raw token only ever lives in the user's cookie.
+func NewToken() (token, hash string, err error) {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		return "", "", err
+	}
+	token = hex.EncodeToString(b)
+	return token, HashToken(token), nil
+}
+
+// HashToken hashes a session token for storage and lookup.
+func HashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
+}

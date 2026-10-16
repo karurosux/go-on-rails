@@ -1,0 +1,95 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+
+	app "{{.Module}}"
+	"{{.Module}}/internal/config"
+	"{{.Module}}/internal/db"
+	dbgen "{{.Module}}/internal/db/gen"
+	"{{.Module}}/internal/httpx"
+	appmw "{{.Module}}/internal/middleware"
+	"{{.Module}}/internal/routes"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+
+	var handler slog.Handler
+	if cfg.IsDev() {
+		handler = slog.NewTextHandler(os.Stdout, nil)
+	} else {
+		handler = slog.NewJSONHandler(os.Stdout, nil)
+	}
+	logger := slog.New(handler)
+	slog.SetDefault(logger)
+
+	pool, err := db.Connect(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("database connection failed", "error", err)
+		os.Exit(1)
+	}
+	defer pool.Close()
+	queries := dbgen.New(pool)
+
+	e := echo.New()
+	e.HideBanner = true
+	e.HidePort = true
+	e.Validator = httpx.NewValidator()
+	e.HTTPErrorHandler = httpx.ErrorHandler(logger)
+
+	e.Use(middleware.RequestID())
+	e.Use(appmw.RequestLogger(logger))
+	e.Use(middleware.Recover())
+	e.Use(middleware.Secure())
+	e.Use(middleware.RateLimiter(middleware.NewRateLimiterMemoryStore(20)))
+	if cfg.IsDev() {
+		e.Use(middleware.CORS())
+	}
+
+	routes.Register(e, queries)
+
+	// Serve the embedded React build; unknown paths fall back to index.html
+	// so client-side routing works. In development the Vite dev server is the
+	// frontend — this only matters for the production binary.
+	e.Use(appmw.SPA(app.DistFS))
+
+	srv := &http.Server{
+		Addr:              ":" + cfg.Port,
+		Handler:           e,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	go func() {
+		logger.Info("server listening", "port", cfg.Port, "env", cfg.Env)
+		if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	logger.Info("shutting down")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Error("graceful shutdown failed", "error", err)
+	}
+}
