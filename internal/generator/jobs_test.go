@@ -19,7 +19,10 @@ func TestJobsTemplatesRender(t *testing.T) {
 		}
 	}
 
-	job := struct{ Module, Name, Pascal, Every, Cron string }{"myapp", "send_welcome_email", "SendWelcomeEmail", "1h", "0 9 * * *"}
+	job := struct {
+		Module, Name, Pascal, Every, Cron string
+		Live                              bool
+	}{"myapp", "send_welcome_email", "SendWelcomeEmail", "1h", "0 9 * * *", true}
 	for _, tmpl := range []string{
 		"jobs/job.go.tmpl",
 		"jobs/job_test.go.tmpl",

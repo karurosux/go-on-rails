@@ -1,0 +1,94 @@
+// Package storage saves uploaded files to local disk and serves them at
+// /uploads/*. Resources store the returned URL in a plain text column
+// (field type `file`). Swap Save for an S3-compatible client when a single
+// disk stops being enough — the handler and frontend stay the same.
+package storage
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/labstack/echo/v4"
+)
+
+// Dir returns the upload directory (STORAGE_DIR, default ./storage/uploads).
+// In production, mount a persistent volume here.
+func Dir() string {
+	if dir := os.Getenv("STORAGE_DIR"); dir != "" {
+		return dir
+	}
+	return "./storage/uploads"
+}
+
+// Upload is the response for a stored file.
+type Upload struct {
+	URL         string `json:"url"`
+	Filename    string `json:"filename"`
+	ContentType string `json:"contentType"`
+	Size        int64  `json:"size"`
+}
+
+var extRe = regexp.MustCompile(`^\.[a-z0-9]{1,8}$`)
+
+// Save streams r to disk under a random name (keeping a sanitized version
+// of the original extension) and returns the public URL.
+func Save(filename, contentType string, r io.Reader) (Upload, error) {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if !extRe.MatchString(ext) {
+		ext = ""
+	}
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return Upload{}, err
+	}
+	key := hex.EncodeToString(b) + ext
+
+	dir := Dir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return Upload{}, err
+	}
+	dst, err := os.Create(filepath.Join(dir, key))
+	if err != nil {
+		return Upload{}, err
+	}
+	defer dst.Close()
+	size, err := io.Copy(dst, r)
+	if err != nil {
+		return Upload{}, err
+	}
+
+	return Upload{
+		URL:         "/uploads/" + key,
+		Filename:    filename,
+		ContentType: contentType,
+		Size:        size,
+	}, nil
+}
+
+// Handler accepts a multipart "file" field (POST /api/uploads) and stores it.
+func Handler() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		fileHeader, err := c.FormFile("file")
+		if err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, `multipart "file" field is required`)
+		}
+		src, err := fileHeader.Open()
+		if err != nil {
+			return fmt.Errorf("open upload: %w", err)
+		}
+		defer src.Close()
+
+		upload, err := Save(fileHeader.Filename, fileHeader.Header.Get("Content-Type"), src)
+		if err != nil {
+			return err
+		}
+		return c.JSON(http.StatusCreated, upload)
+	}
+}

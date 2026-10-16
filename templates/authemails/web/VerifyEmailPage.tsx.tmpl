@@ -1,0 +1,41 @@
+import { useEffect, useRef } from "react";
+import { Link, useSearchParams } from "react-router";
+import { Button } from "@/components/ui/button";
+import { useVerifyEmail } from "../../api/account";
+
+export function VerifyEmailPage() {
+  const [searchParams] = useSearchParams();
+  const token = searchParams.get("token") ?? "";
+  const verify = useVerifyEmail();
+  const fired = useRef(false);
+
+  useEffect(() => {
+    if (token && !fired.current) {
+      fired.current = true;
+      verify.mutate(token);
+    }
+  }, [token, verify]);
+
+  if (!token) {
+    return <p className="text-center text-muted-foreground">This verification link is incomplete.</p>;
+  }
+  if (verify.isError) {
+    return (
+      <p className="text-center text-destructive">
+        This verification link is invalid or has expired.
+      </p>
+    );
+  }
+  if (verify.isSuccess) {
+    return (
+      <div className="mx-auto max-w-sm text-center">
+        <h1 className="mb-3 text-2xl font-semibold">Email verified</h1>
+        <p className="text-muted-foreground">Thanks — your email address is confirmed.</p>
+        <Button asChild className="mt-4">
+          <Link to="/">Continue</Link>
+        </Button>
+      </div>
+    );
+  }
+  return <p className="text-center text-muted-foreground">Verifying…</p>;
+}

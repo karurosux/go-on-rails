@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router";
+{{- if .Live}}
+import { useRealtimeInvalidate } from "@/lib/realtime";
+{{- end}}
 import { Button } from "@/components/ui/button";
+{{- if .HasSearch}}
+import { Input } from "@/components/ui/input";
+{{- end}}
 import {
   Table,
   TableBody,
@@ -9,12 +15,23 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { use{{.PluralPascal}}, useDelete{{.Pascal}} } from "../../api/{{.Plural}}";
+import {
+  use{{.PluralPascal}},
+  useDelete{{.Pascal}},
+  type {{.Pascal}}Sort,
+} from "../../api/{{.Plural}}";
 
 export function {{.PluralPascal}}List() {
   const [page, setPage] = useState(1);
-  const { data, isLoading, isError, error } = use{{.PluralPascal}}(page);
+{{- if .HasSearch}}
+  const [search, setSearch] = useState("");
+{{- end}}
+  const [sort, setSort] = useState<{{.Pascal}}Sort>("newest");
+  const { data, isLoading, isError, error } = use{{.PluralPascal}}(page, {{if .HasSearch}}search{{else}}""{{end}}, sort);
   const deleteMutation = useDelete{{.Pascal}}();
+{{- if .Live}}
+  useRealtimeInvalidate("{{.Plural}}", ["{{.Plural}}"]); // live updates across browsers
+{{- end}}
 
   if (isLoading) return <p className="text-muted-foreground">Loading…</p>;
   if (isError) return <p className="text-destructive">{error.message}</p>;
@@ -32,9 +49,35 @@ export function {{.PluralPascal}}List() {
         </Button>
       </div>
 
+      <div className="mb-4 flex items-center gap-3">
+{{- if .HasSearch}}
+        <Input
+          type="search"
+          placeholder="Search {{.PluralHumanLower}}…"
+          value={search}
+          onChange={(event) => {
+            setSearch(event.target.value);
+            setPage(1);
+          }}
+          className="max-w-xs"
+        />
+{{- end}}
+        <select
+          value={sort}
+          onChange={(event) => {
+            setSort(event.target.value as {{.Pascal}}Sort);
+            setPage(1);
+          }}
+          className="h-9 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+      </div>
+
       {items.length === 0 ? (
         <p className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-          No {{.PluralHumanLower}} yet. Create the first one!
+          {{if .HasSearch}}{search ? "No matches." : "No {{.PluralHumanLower}} yet. Create the first one!"}{{else}}No {{.PluralHumanLower}} yet. Create the first one!{{end}}
         </p>
       ) : (
         <Table>

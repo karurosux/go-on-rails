@@ -2,6 +2,7 @@ package generator
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -49,6 +50,10 @@ func Jobs(root, module, appName string, force bool) error {
 		fmt.Printf("  create  %s\n", f.path)
 	}
 
+	if err := wireWorkerDockerfile(root, appName); err != nil {
+		return err
+	}
+
 	fmt.Println("  run     go mod tidy")
 	if err := tidy(root); err != nil {
 		return err
@@ -67,12 +72,51 @@ River's queue tables are migrated automatically when the worker starts.
 	return nil
 }
 
+// wireWorkerDockerfile adds the worker binary to the production image, so
+// one image runs both processes (the worker via --entrypoint).
+func wireWorkerDockerfile(root, appName string) error {
+	path := filepath.Join(root, "Dockerfile")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return nil // no Dockerfile — nothing to wire
+	}
+	if strings.Contains(string(raw), appName+"-worker") {
+		return nil
+	}
+	if !strings.Contains(string(raw), "# gor:docker-build") {
+		fmt.Printf(`
+Your Dockerfile predates the # gor:docker-build marker — add the worker
+binary yourself:
+
+  (build stage)   RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /%[1]s-worker ./cmd/worker
+  (runtime stage) COPY --from=build /%[1]s-worker /%[1]s-worker
+`, appName)
+		return nil
+	}
+	buildLine := fmt.Sprintf(`RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /%s-worker ./cmd/worker`, appName)
+	if _, err := inject.InsertBefore(path, "# gor:docker-build", buildLine); err != nil {
+		return err
+	}
+	copyLine := fmt.Sprintf("COPY --from=build /%[1]s-worker /%[1]s-worker", appName)
+	changed, err := inject.InsertBefore(path, "# gor:docker-copy", copyLine)
+	if err != nil {
+		return err
+	}
+	if changed {
+		fmt.Println("  inject  Dockerfile (worker binary in the production image)")
+	}
+	return nil
+}
+
 // Job generates one background job and registers its worker. A non-empty
 // every (a Go duration like "1h") or cronExpr (standard cron syntax) also
 // schedules it periodically.
-func Job(root, module, name, every, cronExpr string, force bool) error {
+func Job(root, module, name, every, cronExpr string, live, force bool) error {
 	if !render.Exists(filepath.Join(root, "internal", "jobs", "jobs.go")) {
 		return fmt.Errorf("background jobs are not set up yet: run `gor g jobs` first")
+	}
+	if live && !HasRealtime(root) {
+		return fmt.Errorf("--live needs realtime set up first: run `gor g realtime`")
 	}
 	if every != "" && cronExpr != "" {
 		return fmt.Errorf("use either --every or --cron, not both")
@@ -94,7 +138,8 @@ func Job(root, module, name, every, cronExpr string, force bool) error {
 		Pascal string
 		Every  string
 		Cron   string
-	}{Module: module, Name: name, Pascal: fields.Pascal(name), Every: every, Cron: cronExpr}
+		Live   bool
+	}{Module: module, Name: name, Pascal: fields.Pascal(name), Every: every, Cron: cronExpr, Live: live}
 
 	files := []plannedFile{
 		{"jobs/job.go.tmpl", filepath.Join("internal", "jobs", name+".go")},

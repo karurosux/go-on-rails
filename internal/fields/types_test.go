@@ -8,7 +8,7 @@ import (
 func TestMappingTableComplete(t *testing.T) {
 	all := []Type{
 		TypeString, TypeText, TypeInt, TypeBigint, TypeBool,
-		TypeDecimal, TypeTimestamp, TypeUUID, TypeReferences,
+		TypeDecimal, TypeTimestamp, TypeUUID, TypeReferences, TypeFile,
 	}
 	if len(mappings) != len(all) {
 		t.Fatalf("mappings has %d entries, want %d", len(mappings), len(all))
@@ -47,6 +47,7 @@ func TestMappingSpotChecks(t *testing.T) {
 		{TypeTimestamp, "timestamptz", "time.Time", "string", InputDatetime},
 		{TypeUUID, "uuid", "uuid.UUID", "string", InputText},
 		{TypeReferences, "uuid", "uuid.UUID", "string", InputText},
+		{TypeFile, "text", "string", "string", InputFile},
 	}
 	for _, tc := range cases {
 		m, err := MappingFor(tc.typ)

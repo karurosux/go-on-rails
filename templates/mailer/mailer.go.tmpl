@@ -1,0 +1,120 @@
+// Package mailer sends transactional email over SMTP, with HTML templates
+// embedded in the binary. Add mailers with `gor g mailer <name>`.
+//
+// Configuration (env): SMTP_ADDR (host:port), SMTP_USERNAME, SMTP_PASSWORD,
+// MAIL_FROM. Without SMTP_ADDR, emails are logged instead of sent, so
+// development never fails on missing mail config. The dev docker-compose
+// includes Mailpit, which catches everything sent to it.
+//
+// For emails that must not get lost, call mailers from a background job —
+// River retries failed deliveries with backoff.
+package mailer
+
+import (
+	"bytes"
+	"context"
+	"embed"
+	"fmt"
+	"html/template"
+	"log/slog"
+	"net"
+	"os"
+	"strconv"
+	texttemplate "text/template"
+
+	"github.com/wneessen/go-mail"
+)
+
+//go:embed templates
+var templatesFS embed.FS
+
+// Send renders the named template inside the shared layout and emails it.
+func Send(ctx context.Context, to, subject, templateName string, data any) error {
+	html, err := render(templateName, data)
+	if err != nil {
+		return err
+	}
+
+	addr := os.Getenv("SMTP_ADDR")
+	if addr == "" {
+		slog.InfoContext(ctx, "SMTP_ADDR not set — logging email instead of sending",
+			"to", to, "subject", subject)
+		return nil
+	}
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		return fmt.Errorf("invalid SMTP_ADDR %q (want host:port): %w", addr, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return fmt.Errorf("invalid SMTP_ADDR port %q: %w", portStr, err)
+	}
+
+	opts := []mail.Option{
+		mail.WithPort(port),
+		mail.WithTLSPolicy(mail.TLSOpportunistic),
+	}
+	if username := os.Getenv("SMTP_USERNAME"); username != "" {
+		opts = append(opts,
+			mail.WithSMTPAuth(mail.SMTPAuthPlain),
+			mail.WithUsername(username),
+			mail.WithPassword(os.Getenv("SMTP_PASSWORD")),
+		)
+	}
+	client, err := mail.NewClient(host, opts...)
+	if err != nil {
+		return fmt.Errorf("mail client: %w", err)
+	}
+
+	from := os.Getenv("MAIL_FROM")
+	if from == "" {
+		from = "no-reply@localhost"
+	}
+	msg := mail.NewMsg()
+	if err := msg.From(from); err != nil {
+		return fmt.Errorf("invalid MAIL_FROM %q: %w", from, err)
+	}
+	if err := msg.To(to); err != nil {
+		return fmt.Errorf("invalid recipient %q: %w", to, err)
+	}
+	msg.Subject(subject)
+	// A plain-text part (templates/<name>.txt.tmpl, optional) improves spam
+	// scores; the HTML version is sent as the rich alternative.
+	if text, ok := renderText(templateName, data); ok {
+		msg.SetBodyString(mail.TypeTextPlain, text)
+		msg.AddAlternativeString(mail.TypeTextHTML, html)
+	} else {
+		msg.SetBodyString(mail.TypeTextHTML, html)
+	}
+
+	return client.DialAndSendWithContext(ctx, msg)
+}
+
+// renderText executes templates/<name>.txt.tmpl if it exists.
+func renderText(name string, data any) (string, bool) {
+	t, err := texttemplate.ParseFS(templatesFS, "templates/"+name+".txt.tmpl")
+	if err != nil {
+		return "", false
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return "", false
+	}
+	return buf.String(), true
+}
+
+// render executes templates/<name>.html.tmpl inside the shared layout.
+func render(name string, data any) (string, error) {
+	t, err := template.ParseFS(templatesFS,
+		"templates/layout.html.tmpl",
+		"templates/"+name+".html.tmpl",
+	)
+	if err != nil {
+		return "", fmt.Errorf("parse email template %s: %w", name, err)
+	}
+	var buf bytes.Buffer
+	if err := t.ExecuteTemplate(&buf, "layout", data); err != nil {
+		return "", fmt.Errorf("render email template %s: %w", name, err)
+	}
+	return buf.String(), nil
+}

@@ -13,6 +13,9 @@ import (
 
 	dbgen "{{.Module}}/internal/db/gen"
 	"{{.Module}}/internal/httpx"
+{{- if .Live}}
+	"{{.Module}}/internal/realtime"
+{{- end}}
 )
 
 // Handler serves the {{.Name}} endpoints.
@@ -57,7 +60,7 @@ type listMeta struct {
 	Total   int64 `json:"total"`
 }
 
-// List handles GET /api/{{.Plural}}?page=1&perPage=25.
+// List handles GET /api/{{.Plural}}?page=1&perPage=25&sort=newest{{if .HasSearch}}&search=...{{end}}.
 func (h *Handler) List(c echo.Context) error {
 	page, _ := strconv.Atoi(c.QueryParam("page"))
 	if page < 1 {
@@ -67,20 +70,28 @@ func (h *Handler) List(c echo.Context) error {
 	if perPage < 1 || perPage > 100 {
 		perPage = 25
 	}
+	oldest := c.QueryParam("sort") == "oldest"
+{{- if .HasSearch}}
+	search := c.QueryParam("search")
+{{- end}}
 
 	ctx := c.Request().Context()
-{{if .Service}}	items, total, err := h.svc.List(ctx, int32(perPage), int32((page-1)*perPage))
+{{if .Service}}	items, total, err := h.svc.List(ctx, {{if .HasSearch}}search{{else}}""{{end}}, oldest, int32(perPage), int32((page-1)*perPage))
 	if err != nil {
 		return err
 	}
 {{else}}	items, err := h.q.List{{.PluralPascal}}(ctx, dbgen.List{{.PluralPascal}}Params{
-		Limit:  int32(perPage),
-		Offset: int32((page - 1) * perPage),
+{{- if .HasSearch}}
+		Search: search,
+{{- end}}
+		Oldest:    oldest,
+		RowLimit:  int32(perPage),
+		RowOffset: int32((page - 1) * perPage),
 	})
 	if err != nil {
 		return err
 	}
-	total, err := h.q.Count{{.PluralPascal}}(ctx)
+	total, err := h.q.Count{{.PluralPascal}}(ctx{{if .HasSearch}}, search{{end}})
 	if err != nil {
 		return err
 	}
@@ -126,6 +137,9 @@ func (h *Handler) Create(c echo.Context) error {
 {{end}}{{end}}	if err != nil {
 		return err
 	}
+{{- if .Live}}
+	_ = realtime.Publish(c.Request().Context(), "{{.Plural}}", map[string]any{"event": "created", "id": item.ID})
+{{- end}}
 	return c.JSON(http.StatusCreated, item)
 }
 
@@ -152,6 +166,9 @@ func (h *Handler) Update(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+{{- if .Live}}
+	_ = realtime.Publish(c.Request().Context(), "{{.Plural}}", map[string]any{"event": "updated", "id": item.ID})
+{{- end}}
 	return c.JSON(http.StatusOK, item)
 }
 
@@ -169,5 +186,8 @@ func (h *Handler) Delete(c echo.Context) error {
 	if rows == 0 {
 		return echo.NewHTTPError(http.StatusNotFound, "{{.HumanLower}} not found")
 	}
+{{- if .Live}}
+	_ = realtime.Publish(c.Request().Context(), "{{.Plural}}", map[string]any{"event": "deleted", "id": id})
+{{- end}}
 	return c.NoContent(http.StatusNoContent)
 }

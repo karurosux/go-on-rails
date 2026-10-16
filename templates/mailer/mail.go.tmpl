@@ -1,0 +1,14 @@
+package mailer
+
+import "context"
+
+// {{.Pascal}}Data fills the {{.Name}} email template
+// (templates/{{.Name}}.html.tmpl).
+type {{.Pascal}}Data struct {
+	Name string // example field — shape this to what your template needs
+}
+
+// Send{{.Pascal}} emails the {{.Name}} template to the recipient.
+func Send{{.Pascal}}(ctx context.Context, to string, data {{.Pascal}}Data) error {
+	return Send(ctx, to, "{{.Subject}}", "{{.Name}}", data)
+}

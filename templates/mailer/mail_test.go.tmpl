@@ -1,0 +1,16 @@
+package mailer
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestRender{{.Pascal}}(t *testing.T) {
+	html, err := render("{{.Name}}", {{.Pascal}}Data{Name: "Ada"})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	if !strings.Contains(html, "Ada") {
+		t.Errorf("rendered email does not contain the data:\n%s", html)
+	}
+}

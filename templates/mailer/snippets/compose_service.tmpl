@@ -1,0 +1,5 @@
+mail:
+  image: axllent/mailpit:latest
+  ports:
+    - "{{.SMTPPort}}:1025"
+    - "{{.UIPort}}:8025"

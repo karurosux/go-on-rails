@@ -56,6 +56,18 @@ func AppName(root string) (string, error) {
 	return filepath.Base(mod), nil
 }
 
+// Port returns the app server's port: PORT from the environment or the
+// app's .env, defaulting to 8080 (matching internal/config).
+func Port(root string) string {
+	if port := os.Getenv("PORT"); port != "" {
+		return port
+	}
+	if env, err := godotenv.Read(filepath.Join(root, ".env")); err == nil && env["PORT"] != "" {
+		return env["PORT"]
+	}
+	return "8080"
+}
+
 // DatabaseURL returns DATABASE_URL from the environment, falling back to the
 // app's .env file.
 func DatabaseURL(root string) (string, error) {

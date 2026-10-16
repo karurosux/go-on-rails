@@ -1,7 +1,21 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+
+// The Go server's port comes from the root .env (PORT=...), so the /api
+// proxy follows it without editing this file.
+function apiPort(): string {
+  try {
+    const env = readFileSync(path.resolve(import.meta.dirname, "../.env"), "utf8");
+    const match = env.match(/^PORT=(\d+)\s*$/m);
+    if (match) return match[1];
+  } catch {
+    // no .env yet — fall through to the default
+  }
+  return process.env.PORT ?? "8080";
+}
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -13,7 +27,7 @@ export default defineConfig({
   server: {
     proxy: {
       // The Go server; no CORS needed in development.
-      "/api": "http://localhost:8080",
+      "/api": `http://localhost:${apiPort()}`,
     },
   },
 });

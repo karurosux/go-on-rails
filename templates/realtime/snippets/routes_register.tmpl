@@ -1,0 +1,3 @@
+{{if .Protected}}protected.GET("/realtime/:channel", realtime.Handler())
+{{else}}api.GET("/realtime/:channel", realtime.Handler())
+{{end}}

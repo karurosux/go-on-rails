@@ -1,0 +1,13 @@
+package mailer
+
+import "context"
+
+// VerifyEmailData fills the email verification email.
+type VerifyEmailData struct {
+	Link string
+}
+
+// SendVerifyEmail emails an address verification link (valid for 48 hours).
+func SendVerifyEmail(ctx context.Context, to string, data VerifyEmailData) error {
+	return Send(ctx, to, "Verify your email", "verify_email", data)
+}

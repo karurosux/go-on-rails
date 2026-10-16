@@ -1,4 +1,7 @@
 import { Link, useNavigate, useParams } from "react-router";
+{{- if .Live}}
+import { useRealtimeInvalidate } from "@/lib/realtime";
+{{- end}}
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { use{{.Pascal}}, useDelete{{.Pascal}} } from "../../api/{{.Plural}}";
@@ -8,6 +11,9 @@ export function {{.Pascal}}Detail() {
   const navigate = useNavigate();
   const { data: item, isLoading, isError, error } = use{{.Pascal}}(id ?? "");
   const deleteMutation = useDelete{{.Pascal}}();
+{{- if .Live}}
+  useRealtimeInvalidate("{{.Plural}}", ["{{.Plural}}"]); // live updates across browsers
+{{- end}}
 
   if (isLoading) return <p className="text-muted-foreground">Loading…</p>;
   if (isError) return <p className="text-destructive">{error.message}</p>;

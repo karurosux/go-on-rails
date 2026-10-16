@@ -4,5 +4,5 @@ package templates
 
 import "embed"
 
-//go:embed all:project all:resource all:migration all:auth all:jobs
+//go:embed all:project all:resource all:migration all:auth all:jobs all:realtime all:mailer all:uploads all:authemails all:skill
 var FS embed.FS

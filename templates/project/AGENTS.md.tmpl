@@ -1,0 +1,67 @@
+# {{.AppName}} — agent guide
+
+This app was scaffolded by **gor** (Go on Rails): a Go API (Echo + pgx +
+sqlc + goose) with a React + Vite + TypeScript SPA (TanStack Query, React
+Hook Form + Zod, Tailwind v4 + shadcn/ui), shipped as one binary.
+
+## Golden rule
+
+**Prefer gor generators over hand-writing boilerplate.** They produce both
+the backend and the matching frontend, wired together, and track what they
+generated in `.gor/manifest.json` so later schema changes regenerate
+everything consistently.
+
+```bash
+gor g resource post title:string body:text published:bool   # full-stack CRUD
+gor g migration add_slug_to_posts slug:string               # schema change + auto-regen
+gor g sync post --live                                      # toggle flags on existing resource
+gor g auth            # sessions, roles, guards, login UI
+gor g auth-emails     # password reset + email verification
+gor g jobs && gor g job send_welcome_email [--every 1h|--cron "0 9 * * *"] [--live]
+gor g realtime        # SSE + Postgres NOTIFY, React hooks
+gor g mailer welcome  # SMTP email + Mailpit dev catcher
+gor g uploads         # file storage + upload control (field type: file)
+```
+
+Field types: `string text int bigint bool decimal timestamp uuid references file`.
+Resource flags: `--protected` (needs auth), `--live` (needs realtime),
+`--service`, `--api-only`, `--force`.
+
+## Rules
+
+- **Never remove `gor:` marker comments** (`// gor:imports`, `// gor:routes`,
+  `{/* gor:routes */}`, `{/* gor:protected-routes */}`, `{/* gor:nav */}`,
+  `// gor:workers`, `// gor:periodic`, `# gor:services`) — generators insert there.
+- **Never edit `internal/db/gen/`** — sqlc output. Change `queries/*.sql` or
+  migrations instead, then run `gor db gen` (or let `gor dev` do it on save).
+- Schema changes go through `gor g migration` + `gor db migrate` — don't edit
+  applied migration files.
+- Hand-edited generated files are safe: sync skips them and lists what to
+  update manually.
+- Config is env-only: add new vars to `.env.example` (and `.env`), read them
+  in `internal/config` or via `os.Getenv`.
+
+## Everyday commands
+
+```bash
+gor dev          # API + Vite (+ worker if present), hot reload
+gor db setup     # Docker Postgres + migrate   (reset wipes; seed runs cmd/seed)
+gor build        # production binary (bin/{{.AppName}}); --image for Docker
+```
+
+## Verify your changes
+
+```bash
+go test ./...                 # backend tests
+(cd web && npx tsc -b)        # strict typecheck of the frontend
+go build ./...                # compile check
+```
+
+## Layout
+
+Feature-based: one Go package per resource under `internal/<name>/`, one
+React folder under `web/src/features/<plural>/`, typed clients in
+`web/src/api/`. Shared pieces: `internal/httpx` (errors/validation),
+`internal/auth` (guards: `auth.Require`, `auth.RequireRole`),
+`internal/jobs` (`jobs.Enqueue`), `internal/realtime`
+(`realtime.Publish`), `internal/mailer`, `internal/storage`.

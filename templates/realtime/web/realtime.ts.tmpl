@@ -1,0 +1,29 @@
+import { useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+
+// useRealtime subscribes to a server channel over SSE; the browser
+// reconnects automatically. Publish from Go with realtime.Publish.
+export function useRealtime(channel: string, onMessage: (data: unknown) => void) {
+  const handler = useRef(onMessage);
+  handler.current = onMessage;
+
+  useEffect(() => {
+    const source = new EventSource(`/api/realtime/${channel}`);
+    source.onmessage = (event) => handler.current(JSON.parse(event.data));
+    return () => source.close();
+  }, [channel]);
+}
+
+// useRealtimeInvalidate refetches a query whenever the channel fires —
+// one line of live updates for TanStack Query data:
+//
+//   useRealtimeInvalidate("posts", ["posts"]);
+export function useRealtimeInvalidate(channel: string, queryKey: unknown[]) {
+  const queryClient = useQueryClient();
+  const key = useRef(queryKey);
+  key.current = queryKey;
+
+  useRealtime(channel, () => {
+    void queryClient.invalidateQueries({ queryKey: key.current });
+  });
+}

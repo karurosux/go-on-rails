@@ -1,0 +1,207 @@
+// Package realtime pushes server events to browsers over Server-Sent
+// Events, fanned out through Postgres NOTIFY — so every app instance (and
+// the jobs worker) can publish, with no extra broker. Subscribe in React
+// with useRealtime / useRealtimeInvalidate (web/src/lib/realtime.ts).
+package realtime
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"regexp"
+	"sync"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/labstack/echo/v4"
+
+	"{{.Module}}/internal/config"
+)
+
+// pgChannel is the single Postgres NOTIFY channel everything multiplexes
+// over; app-level channels live inside the JSON payload.
+const pgChannel = "gor_realtime"
+
+var channelRe = regexp.MustCompile(`^[a-z0-9_-]{1,64}$`)
+
+type envelope struct {
+	Channel string          `json:"channel"`
+	Data    json.RawMessage `json:"data"`
+}
+
+type hub struct {
+	pool *pgxpool.Pool
+	mu   sync.RWMutex
+	subs map[string]map[chan []byte]struct{}
+}
+
+var (
+	hubOnce sync.Once
+	hubInst *hub
+	hubErr  error
+)
+
+// getHub lazily builds the hub with a small pool of its own, so realtime
+// needs no extra wiring in main.go.
+func getHub() (*hub, error) {
+	hubOnce.Do(func() {
+		cfg, err := config.Load()
+		if err != nil {
+			hubErr = err
+			return
+		}
+		poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+		if err != nil {
+			hubErr = err
+			return
+		}
+		poolCfg.MaxConns = 4
+		pool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)
+		if err != nil {
+			hubErr = err
+			return
+		}
+		hubInst = &hub{pool: pool, subs: map[string]map[chan []byte]struct{}{}}
+		go hubInst.listen(context.Background())
+	})
+	return hubInst, hubErr
+}
+
+// listen keeps a LISTEN connection alive, reconnecting on failure.
+func (h *hub) listen(ctx context.Context) {
+	for {
+		if err := h.listenOnce(ctx); err != nil && ctx.Err() == nil {
+			slog.Error("realtime listener disconnected; retrying", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+func (h *hub) listenOnce(ctx context.Context) error {
+	conn, err := h.pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	if _, err := conn.Exec(ctx, "LISTEN "+pgChannel); err != nil {
+		return err
+	}
+	for {
+		notification, err := conn.Conn().WaitForNotification(ctx)
+		if err != nil {
+			return err
+		}
+		var env envelope
+		if err := json.Unmarshal([]byte(notification.Payload), &env); err != nil {
+			continue
+		}
+		h.mu.RLock()
+		for ch := range h.subs[env.Channel] {
+			select {
+			case ch <- env.Data:
+			default: // drop for slow subscribers rather than blocking the hub
+			}
+		}
+		h.mu.RUnlock()
+	}
+}
+
+func (h *hub) subscribe(channel string) chan []byte {
+	ch := make(chan []byte, 16)
+	h.mu.Lock()
+	if h.subs[channel] == nil {
+		h.subs[channel] = map[chan []byte]struct{}{}
+	}
+	h.subs[channel][ch] = struct{}{}
+	h.mu.Unlock()
+	return ch
+}
+
+func (h *hub) unsubscribe(channel string, ch chan []byte) {
+	h.mu.Lock()
+	delete(h.subs[channel], ch)
+	if len(h.subs[channel]) == 0 {
+		delete(h.subs, channel)
+	}
+	h.mu.Unlock()
+}
+
+// Publish sends data (JSON-encoded) to every subscriber of channel, across
+// all app instances. It works from handlers, services, and the jobs worker:
+//
+//	realtime.Publish(ctx, "posts", map[string]any{"event": "created", "id": post.ID})
+//
+// Payloads ride through Postgres NOTIFY, which caps them at ~8KB — send
+// IDs and events, not whole records.
+func Publish(ctx context.Context, channel string, data any) error {
+	if !channelRe.MatchString(channel) {
+		return fmt.Errorf("invalid realtime channel %q", channel)
+	}
+	h, err := getHub()
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	raw, err := json.Marshal(envelope{Channel: channel, Data: payload})
+	if err != nil {
+		return err
+	}
+	_, err = h.pool.Exec(ctx, "SELECT pg_notify($1, $2)", pgChannel, string(raw))
+	return err
+}
+
+// Handler streams a channel's events to the browser over SSE
+// (GET /api/realtime/:channel). EventSource reconnects automatically.
+func Handler() echo.HandlerFunc {
+	return func(c echo.Context) error {
+		channel := c.Param("channel")
+		if !channelRe.MatchString(channel) {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid channel name")
+		}
+		h, err := getHub()
+		if err != nil {
+			return err
+		}
+
+		res := c.Response()
+		res.Header().Set(echo.HeaderContentType, "text/event-stream")
+		res.Header().Set("Cache-Control", "no-cache")
+		res.Header().Set("Connection", "keep-alive")
+		res.WriteHeader(http.StatusOK)
+		res.Flush()
+
+		ch := h.subscribe(channel)
+		defer h.unsubscribe(channel, ch)
+
+		// Heartbeats keep proxies from closing the idle stream.
+		heartbeat := time.NewTicker(25 * time.Second)
+		defer heartbeat.Stop()
+
+		ctx := c.Request().Context()
+		for {
+			select {
+			case <-ctx.Done():
+				return nil
+			case data := <-ch:
+				if _, err := fmt.Fprintf(res, "data: %s\n\n", data); err != nil {
+					return nil
+				}
+				res.Flush()
+			case <-heartbeat.C:
+				if _, err := fmt.Fprint(res, ": ping\n\n"); err != nil {
+					return nil
+				}
+				res.Flush()
+			}
+		}
+	}
+}

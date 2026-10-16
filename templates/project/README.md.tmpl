@@ -43,6 +43,9 @@ pages for that resource (tracked in `.gor/manifest.json`). Files you've
 edited by hand are skipped and listed so you can update them yourself;
 `gor g sync post` re-runs the regeneration on demand.
 
+Seed dev data with `gor db seed` (edit `cmd/seed/main.go`). File uploads:
+`gor g uploads`, then give resources an `attachment:file` field.
+
 ## Authentication
 
 ```bash
@@ -54,6 +57,9 @@ gor g resource note title:string --protected     # resource behind auth.Require
 Role-gate backend routes with `auth.RequireRole("admin")`, frontend routes
 with `<RequireRole role="admin" />`. Promote an admin:
 `UPDATE users SET role = 'admin' WHERE email = '...';`
+
+`gor g auth-emails` adds password reset + email verification (pages at
+/forgot-password, /reset-password, /verify-email).
 
 ## Background jobs
 
@@ -67,6 +73,26 @@ gor g job report --cron "0 9 * * *"  # at specific times (daily 9am)
 Enqueue with `jobs.Enqueue(ctx, jobs.SendWelcomeEmailArgs{...})`. The
 worker runs under `gor dev`; in production run `bin/{{.AppName}}-worker`
 alongside the server.
+
+## Email
+
+```bash
+gor g mailer welcome    # SendWelcome() + HTML template + Mailpit dev catcher
+```
+
+Send with `mailer.SendWelcome(ctx, to, mailer.WelcomeData{...})`. In dev,
+Mailpit (in docker-compose) catches everything — nothing is really
+delivered. Configure production SMTP via `SMTP_ADDR` etc. in the env.
+
+## Realtime
+
+```bash
+gor g realtime    # SSE + Postgres NOTIFY — no broker
+```
+
+Publish with `realtime.Publish(ctx, "posts", payload)` (handlers or jobs);
+subscribe with `useRealtimeInvalidate("posts", ["posts"])` for live lists,
+or `useRealtime(channel, handler)` for raw events.
 
 ## Styling & theming
 

@@ -24,11 +24,16 @@ type Resource struct {
 	PluralHumanLower string // "blog posts"
 	Service          bool
 	Protected        bool
+	Live             bool // publish mutations + live-refetch pages via realtime
 	RouteGroup       string // "api", or "protected" for --protected resources
 	HasRequired      bool
+	HasSearch        bool
+	SearchCols       []string // string/text columns, searchable via ILIKE
 	HasTimestamp     bool
 	HasBool          bool
 	HasTextarea      bool
+	HasFile          bool
+	NeedsController  bool // Form uses RHF Controller (checkbox or file fields)
 	SingleField      bool
 	Fields           []FieldData
 
@@ -116,12 +121,20 @@ func BuildResource(module, name string, fs []fields.Field, service bool) Resourc
 		if m.Input == fields.InputTextarea {
 			r.HasTextarea = true
 		}
+		if f.Type == fields.TypeString || f.Type == fields.TypeText {
+			r.HasSearch = true
+			r.SearchCols = append(r.SearchCols, fd.Column)
+		}
+		if f.Type == fields.TypeFile {
+			r.HasFile = true
+		}
 		cols = append(cols, fd.Column)
 		phs = append(phs, fmt.Sprintf("$%d", i+1))
 		r.Fields = append(r.Fields, fd)
 	}
 	r.CreateCols = strings.Join(cols, ", ")
 	r.CreatePlaceholders = strings.Join(phs, ", ")
+	r.NeedsController = r.HasBool || r.HasFile
 	return r
 }
 
@@ -141,6 +154,9 @@ func fillTSX(fd *FieldData, t fields.Type) {
 	case fields.TypeTimestamp:
 		fd.DefaultTS = `""`
 		fd.CellExpr = fmt.Sprintf("{new Date(%s).toLocaleString()}", item)
+	case fields.TypeFile:
+		fd.DefaultTS = `""`
+		fd.CellExpr = fmt.Sprintf(`{%s ? <a className="underline underline-offset-4" href={%s} target="_blank" rel="noreferrer">file</a> : "—"}`, item, item)
 	default:
 		fd.DefaultTS = `""`
 		fd.CellExpr = fmt.Sprintf("{%s}", item)

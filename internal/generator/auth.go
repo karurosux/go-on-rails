@@ -2,6 +2,7 @@ package generator
 
 import (
 	"fmt"
+	"go/format"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,6 +76,9 @@ func Auth(root, module string, opts AuthOptions) error {
 	if err := wireAuthBackend(root, data); err != nil {
 		return err
 	}
+	if err := protectGeneratedRoutes(root); err != nil {
+		return err
+	}
 	if !opts.APIOnly {
 		if err := wireAuthFrontend(root); err != nil {
 			return err
@@ -117,6 +121,41 @@ func wireAuthBackend(root string, data any) error {
 	if changed {
 		fmt.Println("  inject  internal/routes/routes.go")
 	}
+	return nil
+}
+
+// protectGeneratedRoutes moves endpoints generated before auth (realtime,
+// uploads) behind auth.Require, so generation order doesn't matter.
+// Customized lines are left alone.
+func protectGeneratedRoutes(root string) error {
+	path := filepath.Join(root, "internal", "routes", "routes.go")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	content := string(raw)
+	swaps := map[string]string{
+		`api.GET("/realtime/:channel", realtime.Handler())`:               `protected.GET("/realtime/:channel", realtime.Handler())`,
+		`api.POST("/uploads", storage.Handler(), middleware.BodyLimit("10M"))`: `protected.POST("/uploads", storage.Handler(), middleware.BodyLimit("10M"))`,
+	}
+	changed := false
+	for public, protected := range swaps {
+		if strings.Contains(content, public) {
+			content = strings.Replace(content, public, protected, 1)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	formatted, err := format.Source([]byte(content))
+	if err != nil {
+		return fmt.Errorf("protecting generated routes produced invalid Go (this is a gor bug): %w", err)
+	}
+	if err := os.WriteFile(path, formatted, 0o644); err != nil {
+		return err
+	}
+	fmt.Println("  update  internal/routes/routes.go (generated endpoints now require auth)")
 	return nil
 }
 

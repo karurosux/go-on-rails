@@ -21,6 +21,7 @@ type Options struct {
 	Service   bool
 	APIOnly   bool
 	Protected bool // register behind auth.Require (needs `gor g auth` first)
+	Live      bool // realtime updates (needs `gor g realtime` first)
 	Force     bool
 }
 
@@ -39,6 +40,15 @@ func Generate(root, module string, opts Options) error {
 		}
 		r.Protected = true
 		r.RouteGroup = "protected"
+	}
+	if opts.Live {
+		if !HasRealtime(root) {
+			return fmt.Errorf("--live needs realtime set up first: run `gor g realtime`")
+		}
+		r.Live = true
+	}
+	if r.HasFile && !opts.APIOnly && !HasUploads(root) {
+		return fmt.Errorf("`file` fields need uploads set up first: run `gor g uploads`")
 	}
 
 	migration := migrationPath(root, r.Table, opts.Force)
@@ -68,6 +78,7 @@ func Generate(root, module string, opts Options) error {
 		Service:   opts.Service,
 		APIOnly:   opts.APIOnly,
 		Protected: opts.Protected,
+		Live:      opts.Live,
 		Files:     map[string]string{},
 	}
 	for _, f := range opts.Fields {

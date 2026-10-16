@@ -20,10 +20,12 @@ RUN go mod download
 COPY . .
 COPY --from=web /app/web/dist ./web/dist
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /{{.AppName}} ./cmd/server
+# gor:docker-build
 
 # --- runtime ---
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /{{.AppName}} /{{.AppName}}
+# gor:docker-copy
 ENV APP_ENV=production
 EXPOSE 8080
 ENTRYPOINT ["/{{.AppName}}"]

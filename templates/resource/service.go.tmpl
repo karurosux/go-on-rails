@@ -20,15 +20,19 @@ func NewService(q *dbgen.Queries) *Service {
 }
 
 // List returns one page of {{.Plural}} plus the total count.
-func (s *Service) List(ctx context.Context, limit, offset int32) ([]dbgen.{{.Pascal}}, int64, error) {
+func (s *Service) List(ctx context.Context, search string, oldest bool, limit, offset int32) ([]dbgen.{{.Pascal}}, int64, error) {
 	items, err := s.q.List{{.PluralPascal}}(ctx, dbgen.List{{.PluralPascal}}Params{
-		Limit:  limit,
-		Offset: offset,
+{{- if .HasSearch}}
+		Search: search,
+{{- end}}
+		Oldest:    oldest,
+		RowLimit:  limit,
+		RowOffset: offset,
 	})
 	if err != nil {
 		return nil, 0, err
 	}
-	total, err := s.q.Count{{.PluralPascal}}(ctx)
+	total, err := s.q.Count{{.PluralPascal}}(ctx{{if .HasSearch}}, search{{end}})
 	if err != nil {
 		return nil, 0, err
 	}

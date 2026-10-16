@@ -23,16 +23,22 @@ export interface {{.PluralPascal}}Page {
   meta: { page: number; perPage: number; total: number };
 }
 
+export type {{.Pascal}}Sort = "newest" | "oldest";
+
 const keys = {
   all: ["{{.Plural}}"] as const,
-  list: (page: number) => ["{{.Plural}}", "list", page] as const,
+  list: (page: number, search: string, sort: {{.Pascal}}Sort) =>
+    ["{{.Plural}}", "list", page, search, sort] as const,
   detail: (id: string) => ["{{.Plural}}", "detail", id] as const,
 };
 
-export function use{{.PluralPascal}}(page = 1) {
+export function use{{.PluralPascal}}(page = 1, search = "", sort: {{.Pascal}}Sort = "newest") {
   return useQuery({
-    queryKey: keys.list(page),
-    queryFn: () => api.get<{{.PluralPascal}}Page>(`/api/{{.Plural}}?page=${page}`),
+    queryKey: keys.list(page, search, sort),
+    queryFn: () =>
+      api.get<{{.PluralPascal}}Page>(
+        `/api/{{.Plural}}?page=${page}&sort=${sort}&search=${encodeURIComponent(search)}`,
+      ),
   });
 }
 

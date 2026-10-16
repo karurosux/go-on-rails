@@ -92,6 +92,35 @@ func init() {
 	})
 
 	dbCmd.AddCommand(&cobra.Command{
+		Use:   "seed",
+		Short: "Run the app's seeds (cmd/seed)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := project.Root()
+			if err != nil {
+				return err
+			}
+			seedMain := root + "/cmd/seed/main.go"
+			if !render.Exists(seedMain) {
+				// Apps generated before seeds existed get the file on demand.
+				module, err := project.Module(root)
+				if err != nil {
+					return err
+				}
+				content, err := render.File("project/cmd/seed/main.go.tmpl", struct{ Module string }{module})
+				if err != nil {
+					return err
+				}
+				if err := render.Write(seedMain, content, false); err != nil {
+					return err
+				}
+				fmt.Println("  create  cmd/seed/main.go (add your seed data there)")
+			}
+			return run.Command(root, "go", "run", "./cmd/seed")
+		},
+	})
+
+	dbCmd.AddCommand(&cobra.Command{
 		Use:   "gen",
 		Short: "Regenerate the Go db code (sqlc) from migrations/ and queries/",
 		Args:  cobra.NoArgs,

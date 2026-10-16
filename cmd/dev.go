@@ -52,7 +52,7 @@ func init() {
 				})
 				withWorker = ", jobs worker"
 			}
-			fmt.Printf("Starting dev servers — API :8080, web :5173%s (Ctrl+C to stop)\n", withWorker)
+			fmt.Printf("Starting dev servers — API :%s, web :5173%s (Ctrl+C to stop)\n", project.Port(root), withWorker)
 			return run.Procs(procs)
 		},
 	}

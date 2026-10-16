@@ -1,0 +1,28 @@
+import { ApiError } from "./client";
+
+export interface UploadResult {
+  url: string;
+  filename: string;
+  contentType: string;
+  size: number;
+}
+
+// uploadFile sends a file to POST /api/uploads and returns its public URL.
+// Store that URL in your resource's `file` field.
+export async function uploadFile(file: File): Promise<UploadResult> {
+  const body = new FormData();
+  body.append("file", file);
+
+  const res = await fetch("/api/uploads", { method: "POST", body });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const payload = await res.json();
+      message = payload?.error?.message ?? message;
+    } catch {
+      // not JSON; keep the status text
+    }
+    throw new ApiError(res.status, message);
+  }
+  return res.json() as Promise<UploadResult>;
+}

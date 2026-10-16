@@ -21,7 +21,7 @@ func init() {
 		Short:   "Generate code (resource)",
 	}
 
-	var service, apiOnly, protected, force bool
+	var service, apiOnly, protected, live, force bool
 	resourceCmd := &cobra.Command{
 		Use:   "resource <name> <field:type>...",
 		Short: "Generate a full CRUD resource (migration, queries, handlers, React pages)",
@@ -54,6 +54,7 @@ func init() {
 				Service:   service,
 				APIOnly:   apiOnly,
 				Protected: protected,
+				Live:      live,
 				Force:     force,
 			})
 		},
@@ -61,6 +62,7 @@ func init() {
 	resourceCmd.Flags().BoolVar(&service, "service", false, "generate a service layer between handlers and the database")
 	resourceCmd.Flags().BoolVar(&apiOnly, "api-only", false, "skip frontend generation")
 	resourceCmd.Flags().BoolVar(&protected, "protected", false, "require a signed-in user (needs `gor g auth` first)")
+	resourceCmd.Flags().BoolVar(&live, "live", false, "publish mutations + live-updating pages (needs `gor g realtime` first)")
 	resourceCmd.Flags().BoolVar(&force, "force", false, "overwrite existing files")
 
 	migrationCmd := &cobra.Command{
@@ -86,14 +88,21 @@ func init() {
 		},
 	}
 
+	var syncLive, syncNoLive, syncProtected, syncNoProtected bool
 	syncCmd := &cobra.Command{
 		Use:   "sync <resource>",
-		Short: "Regenerate a resource's derived files from its recorded fields",
+		Short: "Regenerate a resource's derived files (and toggle --live/--protected)",
 		Long: "Regenerate queries, handlers, and frontend files for a resource from the\n" +
 			"field list recorded in .gor/manifest.json. Files you have edited by hand\n" +
-			"are left alone and listed instead.",
+			"are left alone and listed instead.\n\n" +
+			"Toggle situational flags on an existing resource:\n" +
+			"  gor g sync post --live          # make it realtime\n" +
+			"  gor g sync post --no-protected  # make it public again",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if (syncLive && syncNoLive) || (syncProtected && syncNoProtected) {
+				return fmt.Errorf("pick one of --live/--no-live and --protected/--no-protected")
+			}
 			root, err := project.Root()
 			if err != nil {
 				return err
@@ -102,9 +111,22 @@ func init() {
 			if err != nil {
 				return err
 			}
-			return generator.Sync(root, module, args[0])
+			changes := &generator.FlagChanges{}
+			if syncLive || syncNoLive {
+				v := syncLive
+				changes.Live = &v
+			}
+			if syncProtected || syncNoProtected {
+				v := syncProtected
+				changes.Protected = &v
+			}
+			return generator.Sync(root, module, args[0], changes)
 		},
 	}
+	syncCmd.Flags().BoolVar(&syncLive, "live", false, "turn on realtime updates (needs `gor g realtime`)")
+	syncCmd.Flags().BoolVar(&syncNoLive, "no-live", false, "turn off realtime updates")
+	syncCmd.Flags().BoolVar(&syncProtected, "protected", false, "move behind auth.Require (needs `gor g auth`)")
+	syncCmd.Flags().BoolVar(&syncNoProtected, "no-protected", false, "make public again")
 
 	var authAPIOnly, authForce bool
 	authCmd := &cobra.Command{
@@ -156,7 +178,7 @@ func init() {
 	}
 	jobsCmd.Flags().BoolVar(&jobsForce, "force", false, "overwrite existing files")
 
-	var jobForce bool
+	var jobForce, jobLive bool
 	var jobEvery, jobCron string
 	jobCmd := &cobra.Command{
 		Use:   "job <name>",
@@ -177,18 +199,115 @@ func init() {
 			if err != nil {
 				return err
 			}
-			return generator.Job(root, module, name, jobEvery, jobCron, jobForce)
+			return generator.Job(root, module, name, jobEvery, jobCron, jobLive, jobForce)
 		},
 	}
 	jobCmd.Flags().StringVar(&jobEvery, "every", "", "also run on a schedule (Go duration: 30m, 1h, 24h)")
 	jobCmd.Flags().StringVar(&jobCron, "cron", "", `also run on a cron schedule, e.g. "0 9 * * *" (daily 9am)`)
+	jobCmd.Flags().BoolVar(&jobLive, "live", false, `stream started/completed/failed to the browser on the "jobs" channel (needs gor g realtime)`)
 	jobCmd.Flags().BoolVar(&jobForce, "force", false, "overwrite existing files")
+
+	var realtimeAPIOnly, realtimeForce bool
+	realtimeCmd := &cobra.Command{
+		Use:   "realtime",
+		Short: "Set up realtime server push (SSE + Postgres NOTIFY) with React hooks",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := project.Root()
+			if err != nil {
+				return err
+			}
+			module, err := project.Module(root)
+			if err != nil {
+				return err
+			}
+			return generator.Realtime(root, module, realtimeAPIOnly, realtimeForce)
+		},
+	}
+	realtimeCmd.Flags().BoolVar(&realtimeAPIOnly, "api-only", false, "skip frontend generation")
+	realtimeCmd.Flags().BoolVar(&realtimeForce, "force", false, "overwrite existing files")
+
+	var mailerForce bool
+	mailerCmd := &cobra.Command{
+		Use:   "mailer <name>",
+		Short: "Generate a transactional email (SMTP + HTML template + Mailpit dev catcher)",
+		Long:  "Generate a transactional email, e.g.:\n  gor g mailer welcome\n\nThe first mailer also sets up internal/mailer and adds Mailpit to\ndocker-compose so dev email is caught locally instead of delivered.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if !resourceNameRe.MatchString(name) {
+				return fmt.Errorf("mailer name %q must be lower_snake_case, starting with a letter", name)
+			}
+			root, err := project.Root()
+			if err != nil {
+				return err
+			}
+			module, err := project.Module(root)
+			if err != nil {
+				return err
+			}
+			app, err := project.AppName(root)
+			if err != nil {
+				return err
+			}
+			return generator.Mailer(root, module, app, name, mailerForce)
+		},
+	}
+	mailerCmd.Flags().BoolVar(&mailerForce, "force", false, "overwrite existing files")
+
+	var uploadsAPIOnly, uploadsForce bool
+	uploadsCmd := &cobra.Command{
+		Use:   "uploads",
+		Short: "Set up file uploads (disk storage, endpoint, frontend upload control)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := project.Root()
+			if err != nil {
+				return err
+			}
+			module, err := project.Module(root)
+			if err != nil {
+				return err
+			}
+			return generator.Uploads(root, module, uploadsAPIOnly, uploadsForce)
+		},
+	}
+	uploadsCmd.Flags().BoolVar(&uploadsAPIOnly, "api-only", false, "skip frontend generation")
+	uploadsCmd.Flags().BoolVar(&uploadsForce, "force", false, "overwrite existing files")
+
+	var authEmailsAPIOnly, authEmailsForce bool
+	authEmailsCmd := &cobra.Command{
+		Use:   "auth-emails",
+		Short: "Generate password reset + email verification (needs auth; sets up mailer)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := project.Root()
+			if err != nil {
+				return err
+			}
+			module, err := project.Module(root)
+			if err != nil {
+				return err
+			}
+			app, err := project.AppName(root)
+			if err != nil {
+				return err
+			}
+			return generator.AuthEmails(root, module, app, authEmailsAPIOnly, authEmailsForce)
+		},
+	}
+	authEmailsCmd.Flags().BoolVar(&authEmailsAPIOnly, "api-only", false, "skip frontend generation")
+	authEmailsCmd.Flags().BoolVar(&authEmailsForce, "force", false, "overwrite existing files")
 
 	generateCmd.AddCommand(resourceCmd)
 	generateCmd.AddCommand(migrationCmd)
 	generateCmd.AddCommand(authCmd)
+	generateCmd.AddCommand(authEmailsCmd)
 	generateCmd.AddCommand(jobsCmd)
 	generateCmd.AddCommand(jobCmd)
+	generateCmd.AddCommand(realtimeCmd)
+	generateCmd.AddCommand(mailerCmd)
+	generateCmd.AddCommand(uploadsCmd)
 	generateCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(generateCmd)
 }

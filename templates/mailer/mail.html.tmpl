@@ -1,0 +1,11 @@
+{{define "content"}}
+<p>Hi {{.Name}},</p>
+
+<p>
+  This is the <strong>[[.Name]]</strong> email. Edit this template at
+  <code>internal/mailer/templates/[[.Name]].html.tmpl</code> and its data
+  struct in <code>internal/mailer/[[.Name]].go</code>.
+</p>
+
+<p>— The [[.AppName]] team</p>
+{{end}}

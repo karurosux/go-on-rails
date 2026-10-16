@@ -1,0 +1,3 @@
+{{if .Protected}}protected.POST("/uploads", storage.Handler(), middleware.BodyLimit("10M"))
+{{else}}api.POST("/uploads", storage.Handler(), middleware.BodyLimit("10M"))
+{{end}}e.Static("/uploads", storage.Dir())

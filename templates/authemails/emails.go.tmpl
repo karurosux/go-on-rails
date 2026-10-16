@@ -1,0 +1,186 @@
+package auth
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/labstack/echo/v4"
+
+	dbgen "{{.Module}}/internal/db/gen"
+	"{{.Module}}/internal/httpx"
+	"{{.Module}}/internal/mailer"
+)
+
+const (
+	purposeReset   = "password_reset"
+	purposeVerify  = "verify_email"
+	resetTokenTTL  = time.Hour
+	verifyTokenTTL = 48 * time.Hour
+)
+
+// appURL is the public base URL used in email links (APP_URL env).
+func appURL() string {
+	if url := os.Getenv("APP_URL"); url != "" {
+		return strings.TrimRight(url, "/")
+	}
+	return "http://localhost:5173"
+}
+
+// EmailHandler serves password reset and email verification.
+type EmailHandler struct {
+	q *dbgen.Queries
+}
+
+// RegisterEmailRoutes mounts the email flows on the API group.
+func RegisterEmailRoutes(g *echo.Group, q *dbgen.Queries) {
+	h := &EmailHandler{q: q}
+	g.POST("/auth/forgot-password", h.forgotPassword, LoginRateLimit())
+	g.POST("/auth/reset-password", h.resetPassword, LoginRateLimit())
+	g.POST("/auth/verify-email", h.verifyEmail)
+}
+
+// SendVerificationEmail creates a verification token and emails the link.
+// Call it after registration:
+//
+//	_ = auth.SendVerificationEmail(c.Request().Context(), h.q, user)
+func SendVerificationEmail(ctx context.Context, q *dbgen.Queries, user dbgen.User) error {
+	token, hash, err := NewToken()
+	if err != nil {
+		return err
+	}
+	if err := q.DeleteUserAuthTokens(ctx, dbgen.DeleteUserAuthTokensParams{
+		UserID: user.ID, Purpose: purposeVerify,
+	}); err != nil {
+		return err
+	}
+	if err := q.CreateAuthToken(ctx, dbgen.CreateAuthTokenParams{
+		TokenHash: hash,
+		UserID:    user.ID,
+		Purpose:   purposeVerify,
+		ExpiresAt: time.Now().Add(verifyTokenTTL),
+	}); err != nil {
+		return err
+	}
+	return mailer.SendVerifyEmail(ctx, user.Email, mailer.VerifyEmailData{
+		Link: appURL() + "/verify-email?token=" + token,
+	})
+}
+
+// ForgotPasswordInput is the POST /api/auth/forgot-password request body.
+type ForgotPasswordInput struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+// forgotPassword always answers 204, so it can't be used to probe which
+// emails are registered.
+func (h *EmailHandler) forgotPassword(c echo.Context) error {
+	var in ForgotPasswordInput
+	if err := httpx.Bind(c, &in); err != nil {
+		return err
+	}
+	ctx := c.Request().Context()
+	user, err := h.q.GetUserByEmail(ctx, in.Email)
+	if err == nil {
+		token, hash, err := NewToken()
+		if err != nil {
+			return err
+		}
+		if err := h.q.DeleteUserAuthTokens(ctx, dbgen.DeleteUserAuthTokensParams{
+			UserID: user.ID, Purpose: purposeReset,
+		}); err != nil {
+			return err
+		}
+		if err := h.q.CreateAuthToken(ctx, dbgen.CreateAuthTokenParams{
+			TokenHash: hash,
+			UserID:    user.ID,
+			Purpose:   purposeReset,
+			ExpiresAt: time.Now().Add(resetTokenTTL),
+		}); err != nil {
+			return err
+		}
+		if err := mailer.SendPasswordReset(ctx, user.Email, mailer.PasswordResetData{
+			Link: appURL() + "/reset-password?token=" + token,
+		}); err != nil {
+			return err
+		}
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// ResetPasswordInput is the POST /api/auth/reset-password request body.
+type ResetPasswordInput struct {
+	Token    string `json:"token" validate:"required"`
+	Password string `json:"password" validate:"required,min=8"`
+}
+
+func (h *EmailHandler) resetPassword(c echo.Context) error {
+	var in ResetPasswordInput
+	if err := httpx.Bind(c, &in); err != nil {
+		return err
+	}
+	ctx := c.Request().Context()
+	row, err := h.q.GetAuthToken(ctx, dbgen.GetAuthTokenParams{
+		TokenHash: HashToken(in.Token), Purpose: purposeReset,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "invalid or expired token")
+	}
+	if err != nil {
+		return err
+	}
+	hash, err := HashPassword(in.Password)
+	if err != nil {
+		return err
+	}
+	if err := h.q.SetUserPassword(ctx, dbgen.SetUserPasswordParams{
+		ID: row.UserID, PasswordHash: hash,
+	}); err != nil {
+		return err
+	}
+	if err := h.q.DeleteUserAuthTokens(ctx, dbgen.DeleteUserAuthTokensParams{
+		UserID: row.UserID, Purpose: purposeReset,
+	}); err != nil {
+		return err
+	}
+	// Sign out everywhere: a password reset revokes every session.
+	if err := h.q.DeleteUserSessions(ctx, row.UserID); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}
+
+// VerifyEmailInput is the POST /api/auth/verify-email request body.
+type VerifyEmailInput struct {
+	Token string `json:"token" validate:"required"`
+}
+
+func (h *EmailHandler) verifyEmail(c echo.Context) error {
+	var in VerifyEmailInput
+	if err := httpx.Bind(c, &in); err != nil {
+		return err
+	}
+	ctx := c.Request().Context()
+	row, err := h.q.GetAuthToken(ctx, dbgen.GetAuthTokenParams{
+		TokenHash: HashToken(in.Token), Purpose: purposeVerify,
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return echo.NewHTTPError(http.StatusUnprocessableEntity, "invalid or expired token")
+	}
+	if err != nil {
+		return err
+	}
+	if err := h.q.SetEmailVerified(ctx, row.UserID); err != nil {
+		return err
+	}
+	if err := h.q.DeleteUserAuthTokens(ctx, dbgen.DeleteUserAuthTokensParams{
+		UserID: row.UserID, Purpose: purposeVerify,
+	}); err != nil {
+		return err
+	}
+	return c.NoContent(http.StatusNoContent)
+}

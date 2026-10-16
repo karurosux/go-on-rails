@@ -41,6 +41,25 @@ func File(name string, data any) ([]byte, error) {
 	return out, nil
 }
 
+// FileDelims renders an embedded template using [[ ]] as the action
+// delimiters, for generating files that themselves contain {{ }} runtime
+// template syntax (e.g. email HTML templates).
+func FileDelims(name string, data any) ([]byte, error) {
+	raw, err := templates.FS.ReadFile(name)
+	if err != nil {
+		return nil, fmt.Errorf("read template %s: %w", name, err)
+	}
+	t, err := template.New(filepath.Base(name)).Delims("[[", "]]").Parse(string(raw))
+	if err != nil {
+		return nil, fmt.Errorf("parse template %s: %w", name, err)
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, data); err != nil {
+		return nil, fmt.Errorf("render template %s: %w", name, err)
+	}
+	return buf.Bytes(), nil
+}
+
 // Write writes content to path, creating parent directories. It refuses to
 // overwrite an existing file unless force is true.
 func Write(path string, content []byte, force bool) error {

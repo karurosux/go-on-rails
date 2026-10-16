@@ -25,8 +25,8 @@ type Handler struct {
 // login are public; everything else requires a session.
 func Register(g *echo.Group, q *dbgen.Queries) {
 	h := &Handler{q: q, secure: os.Getenv("APP_ENV") == "production"}
-	g.POST("/auth/register", h.register)
-	g.POST("/auth/login", h.login)
+	g.POST("/auth/register", h.register, LoginRateLimit())
+	g.POST("/auth/login", h.login, LoginRateLimit())
 	g.POST("/auth/logout", h.logout, Require)
 	g.GET("/auth/me", h.me, Require)
 }

@@ -19,6 +19,7 @@ const (
 	TypeTimestamp  Type = "timestamp"
 	TypeUUID       Type = "uuid"
 	TypeReferences Type = "references"
+	TypeFile       Type = "file"
 )
 
 // Input identifies which form widget the frontend templates render.
@@ -30,6 +31,7 @@ const (
 	InputNumber   Input = "number"
 	InputCheckbox Input = "checkbox"
 	InputDatetime Input = "datetime-local"
+	InputFile     Input = "file"
 )
 
 // Mapping is the single source of truth for how a gor type maps onto
@@ -125,6 +127,15 @@ var mappings = map[Type]Mapping{
 		Zod:      `z.string().uuid("Must be a UUID")`,
 		Input:    InputText,
 		Required: true,
+	},
+	TypeFile: {
+		Postgres: "text", // stores the uploaded file's URL (see `gor g uploads`)
+		Go:       "string",
+		GoPtr:    "*string",
+		TS:       "string",
+		Zod:      `z.string()`,
+		Input:    InputFile,
+		Required: false,
 	},
 }
 
