@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- `gor g model <name> <fields>`: data layer only (migration + sqlc
+  queries) for internal tables.
+- `gor g resource --headless`: frontend building blocks without routes —
+  Zod schema, typed client + hooks, and a props-driven Form
+  (`id?`, `onSuccess`, `onCancel`) to embed in modals or custom pages.
+- Per-app generator defaults in `.gor/config.json`
+  (`{ "resource": { "headless": true } }`), Rails `config.generators`
+  style; explicit CLI flags always override.
+
+- `gor g uploads` now generates two storage drivers selected at runtime by
+  `STORAGE_DRIVER`: `disk` (default) and `s3` for any S3-compatible store
+  (AWS S3, Cloudflare R2, MinIO, DigitalOcean Spaces) via `S3_*` env vars,
+  with optional `S3_PUBLIC_URL` for CDN-fronted buckets.
+
 ## v0.1.0
 
 First release.

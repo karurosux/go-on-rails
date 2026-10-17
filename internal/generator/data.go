@@ -25,6 +25,7 @@ type Resource struct {
 	Service          bool
 	Protected        bool
 	Live             bool // publish mutations + live-refetch pages via realtime
+	Headless         bool // frontend building blocks only: schema, client, props-driven Form
 	RouteGroup       string // "api", or "protected" for --protected resources
 	HasRequired      bool
 	HasSearch        bool

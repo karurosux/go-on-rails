@@ -17,9 +17,18 @@ The frontend gets `web/src/components/upload-input.tsx` — the control
 generated forms use for `file` fields (upload button, view link, remove) —
 and `uploadFile()` in `web/src/api/uploads.ts` for custom UIs.
 
-## Storage
+## Storage drivers
 
-`STORAGE_DIR` overrides the location (default `./storage/uploads`;
-gitignored). In production, mount a persistent volume there. To move to
-S3-compatible storage later, swap the `Save` function in
-`internal/storage/storage.go` — the handler and frontend stay the same.
+`STORAGE_DRIVER` picks the backend at runtime — no code changes to deploy:
+
+- **`disk`** (default): local directory, `STORAGE_DIR` overrides the
+  location (default `./storage/uploads`; gitignored). Served at
+  `/uploads/*`; mount a persistent volume in production.
+- **`s3`**: any S3-compatible store — AWS S3, Cloudflare R2, MinIO,
+  DigitalOcean Spaces. Configure `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
+  `S3_ACCESS_KEY`/`S3_SECRET_KEY`. Stored URLs point at
+  `<endpoint>/<bucket>/<key>` by default, so the bucket must be publicly
+  readable — or set `S3_PUBLIC_URL` to a CDN/public base in front of it.
+
+The upload endpoint, form control, and stored URL columns are identical
+under both drivers.

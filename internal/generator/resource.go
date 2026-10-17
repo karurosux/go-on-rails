@@ -22,6 +22,8 @@ type Options struct {
 	APIOnly   bool
 	Protected bool // register behind auth.Require (needs `gor g auth` first)
 	Live      bool // realtime updates (needs `gor g realtime` first)
+	Headless  bool // frontend building blocks only (schema, client, Form) — no pages/routes
+	ModelOnly bool // data layer only: migration + queries, no API or frontend
 	Force     bool
 }
 
@@ -47,7 +49,11 @@ func Generate(root, module string, opts Options) error {
 		}
 		r.Live = true
 	}
-	if r.HasFile && !opts.APIOnly && !HasUploads(root) {
+	if opts.Headless && opts.APIOnly {
+		return fmt.Errorf("--headless and --api-only are mutually exclusive")
+	}
+	r.Headless = opts.Headless
+	if r.HasFile && !opts.APIOnly && !opts.ModelOnly && !HasUploads(root) {
 		return fmt.Errorf("`file` fields need uploads set up first: run `gor g uploads`")
 	}
 
@@ -79,6 +85,8 @@ func Generate(root, module string, opts Options) error {
 		APIOnly:   opts.APIOnly,
 		Protected: opts.Protected,
 		Live:      opts.Live,
+		Headless:  opts.Headless,
+		ModelOnly: opts.ModelOnly,
 		Files:     map[string]string{},
 	}
 	for _, f := range opts.Fields {
@@ -103,12 +111,14 @@ func Generate(root, module string, opts Options) error {
 		return err
 	}
 
-	if err := wireBackendRoutes(root, r); err != nil {
-		return err
-	}
-	if !opts.APIOnly {
-		if err := wireFrontendRoutes(root, r); err != nil {
+	if !opts.ModelOnly {
+		if err := wireBackendRoutes(root, r); err != nil {
 			return err
+		}
+		if !opts.APIOnly && !opts.Headless {
+			if err := wireFrontendRoutes(root, r); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -125,12 +135,17 @@ func Generate(root, module string, opts Options) error {
 func planFiles(r Resource, opts Options, migration string) []plannedFile {
 	files := []plannedFile{
 		{"resource/queries.sql.tmpl", filepath.Join("queries", r.Plural+".sql")},
-		{"resource/handler.go.tmpl", filepath.Join("internal", r.Name, "handler.go")},
-		{"resource/handler_test.go.tmpl", filepath.Join("internal", r.Name, "handler_test.go")},
 	}
 	if migration != "" {
 		files = append([]plannedFile{{"resource/migration.sql.tmpl", migration}}, files...)
 	}
+	if opts.ModelOnly {
+		return files
+	}
+	files = append(files,
+		plannedFile{"resource/handler.go.tmpl", filepath.Join("internal", r.Name, "handler.go")},
+		plannedFile{"resource/handler_test.go.tmpl", filepath.Join("internal", r.Name, "handler_test.go")},
+	)
 	if opts.Service {
 		files = append(files, plannedFile{"resource/service.go.tmpl", filepath.Join("internal", r.Name, "service.go")})
 	}
@@ -139,10 +154,14 @@ func planFiles(r Resource, opts Options, migration string) []plannedFile {
 		files = append(files,
 			plannedFile{"resource/web/api.ts.tmpl", filepath.Join("web", "src", "api", r.Plural+".ts")},
 			plannedFile{"resource/web/schema.ts.tmpl", filepath.Join(feat, "schema.ts")},
-			plannedFile{"resource/web/List.tsx.tmpl", filepath.Join(feat, r.PluralPascal+"List.tsx")},
-			plannedFile{"resource/web/Detail.tsx.tmpl", filepath.Join(feat, r.Pascal+"Detail.tsx")},
 			plannedFile{"resource/web/Form.tsx.tmpl", filepath.Join(feat, r.Pascal+"Form.tsx")},
 		)
+		if !opts.Headless {
+			files = append(files,
+				plannedFile{"resource/web/List.tsx.tmpl", filepath.Join(feat, r.PluralPascal+"List.tsx")},
+				plannedFile{"resource/web/Detail.tsx.tmpl", filepath.Join(feat, r.Pascal+"Detail.tsx")},
+			)
+		}
 	}
 	return files
 }
@@ -263,6 +282,15 @@ func wireFrontendRoutes(root string, r Resource) error {
 }
 
 func printSummary(r Resource, opts Options) {
+	if opts.ModelOnly {
+		fmt.Printf(`
+Model %s generated: migration + sqlc queries (no API, no frontend).
+Add the rest later with: gor g resource %s <same fields> --force
+
+Apply the migration with: gor db migrate
+`, r.Name, r.Name)
+		return
+	}
 	fmt.Printf(`
 Resource %s generated.
 
@@ -273,7 +301,10 @@ Resource %s generated.
     PATCH  /api/%s/:id
     DELETE /api/%s/:id
 `, r.Name, r.Plural, r.Plural, r.Plural, r.Plural, r.Plural)
-	if !opts.APIOnly {
+	switch {
+	case opts.Headless:
+		fmt.Printf("\n  Building blocks (no routes): schema, hooks in api/%s.ts, and\n  <%sForm id? onSuccess? onCancel? /> to embed anywhere\n", r.Plural, r.Pascal)
+	case !opts.APIOnly:
 		fmt.Printf("\n  Pages: /%s, /%s/new, /%s/:id, /%s/:id/edit\n", r.Plural, r.Plural, r.Plural, r.Plural)
 	}
 	fmt.Println("\nApply the migration with: gor db migrate")

@@ -27,6 +27,8 @@ type ManifestResource struct {
 	APIOnly   bool              `json:"apiOnly,omitempty"`
 	Protected bool              `json:"protected,omitempty"`
 	Live      bool              `json:"live,omitempty"`
+	Headless  bool              `json:"headless,omitempty"`
+	ModelOnly bool              `json:"modelOnly,omitempty"`
 	Fields    []string          `json:"fields"`
 	Files     map[string]string `json:"files"`
 }

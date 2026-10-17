@@ -1,7 +1,9 @@
 import { useEffect } from "react";
 import { {{if .NeedsController}}Controller, {{end}}useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
+{{- if not .Headless}}
 import { Link, useNavigate, useParams } from "react-router";
+{{- end}}
 import { Button } from "@/components/ui/button";
 {{- if .HasBool}}
 import { Checkbox } from "@/components/ui/checkbox";
@@ -16,17 +18,35 @@ import { UploadInput } from "@/components/upload-input";
 {{- end}}
 import { ApiError } from "../../api/client";
 import {
-  use{{.Pascal}},
-  useCreate{{.Pascal}},
-  useUpdate{{.Pascal}},
-  type {{.Pascal}}Input,
+{{- if .Headless}}
+	type {{.Pascal}},
+{{- end}}
+	use{{.Pascal}},
+	useCreate{{.Pascal}},
+	useUpdate{{.Pascal}},
+	type {{.Pascal}}Input,
 } from "../../api/{{.Plural}}";
 import { {{.Camel}}Schema, type {{.Pascal}}FormValues } from "./schema";
 
+{{if .Headless -}}
+// {{.Pascal}}Form is a route-free building block: embed it in modals,
+// wizards, or your own pages. Pass `id` to edit, omit it to create.
+export function {{.Pascal}}Form({
+  id,
+  onSuccess,
+  onCancel,
+}: {
+  id?: string;
+  onSuccess?: (item: {{.Pascal}}) => void;
+  onCancel?: () => void;
+}) {
+  const isEdit = id !== undefined;
+{{- else -}}
 export function {{.Pascal}}Form() {
   const { id } = useParams();
   const isEdit = id !== undefined;
   const navigate = useNavigate();
+{{- end}}
   const existing = use{{.Pascal}}(id ?? "");
   const createMutation = useCreate{{.Pascal}}();
   const updateMutation = useUpdate{{.Pascal}}();
@@ -67,11 +87,20 @@ export function {{.Pascal}}Form() {
     };
     try {
       if (isEdit) {
+{{- if .Headless}}
+        const updated = await updateMutation.mutateAsync({ id, input });
+        onSuccess?.(updated);
+{{- else}}
         await updateMutation.mutateAsync({ id, input });
         navigate(`/{{.Plural}}/${id}`);
+{{- end}}
       } else {
         const created = await createMutation.mutateAsync(input);
+{{- if .Headless}}
+        onSuccess?.(created);
+{{- else}}
         navigate(`/{{.Plural}}/${created.id}`);
+{{- end}}
       }
     } catch (err) {
       if (err instanceof ApiError && err.fields) {
@@ -91,12 +120,16 @@ export function {{.Pascal}}Form() {
     return <p className="text-destructive">{existing.error.message}</p>;
 
   return (
+{{- if .Headless}}
+    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+{{- else}}
     <div className="mx-auto max-w-xl">
       <h1 className="mb-6 text-2xl font-semibold">
         {isEdit ? "Edit {{.HumanLower}}" : "New {{.HumanLower}}"}
       </h1>
 
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-5" noValidate>
+{{- end}}
 {{- range .Fields}}
 {{- if eq .Input "checkbox"}}
         <div className="flex items-center gap-2">
@@ -147,11 +180,23 @@ export function {{.Pascal}}Form() {
           <Button type="submit" disabled={isSubmitting}>
             {isEdit ? "Save changes" : "Create {{.HumanLower}}"}
           </Button>
+{{- if .Headless}}
+          {onCancel && (
+            <Button type="button" variant="outline" onClick={onCancel}>
+              Cancel
+            </Button>
+          )}
+{{- else}}
           <Button asChild variant="outline">
             <Link to="/{{.Plural}}">Cancel</Link>
           </Button>
+{{- end}}
         </div>
+{{- if .Headless}}
+    </form>
+{{- else}}
       </form>
     </div>
+{{- end}}
   );
 }

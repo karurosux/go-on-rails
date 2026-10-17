@@ -36,6 +36,8 @@ self-adjusts its Go toolchain to `go.mod` via `GOTOOLCHAIN=auto`.
 Nothing is baked in at build time — everything is read at runtime from the
 environment: `APP_ENV` (`production` enables Secure cookies and JSON
 logs), `PORT`, `DATABASE_URL`, `SMTP_*`/`MAIL_FROM` (mailer), `APP_URL`
-(links in auth emails), `STORAGE_DIR` (uploads — mount a persistent volume
-there). In development the same values come from `.env`, which generators
-keep filled with working defaults.
+(links in auth emails), and uploads: `STORAGE_DRIVER=disk` with a
+persistent volume at `STORAGE_DIR`, or `STORAGE_DRIVER=s3` with the
+`S3_*` settings for any S3-compatible store. In development the same
+values come from `.env`, which generators keep filled with working
+defaults.

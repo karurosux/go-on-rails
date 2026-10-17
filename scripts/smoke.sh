@@ -36,6 +36,8 @@ echo "==> generators"
 "$GOR" g mailer welcome
 "$GOR" g resource post title:string body:text published:bool views:int price:decimal published_at:timestamp attachment:file --live --protected
 "$GOR" g resource author name:string bio:text --service --api-only
+"$GOR" g resource widget title:string body:text in_stock:bool --headless
+"$GOR" g model tag name:string
 "$GOR" g migration add_slug_to_posts slug:string
 "$GOR" g sync post --no-live
 "$GOR" skills install --project

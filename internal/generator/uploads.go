@@ -28,6 +28,8 @@ func Uploads(root, module string, apiOnly, force bool) error {
 
 	files := []plannedFile{
 		{"uploads/storage.go.tmpl", filepath.Join("internal", "storage", "storage.go")},
+		{"uploads/disk.go.tmpl", filepath.Join("internal", "storage", "disk.go")},
+		{"uploads/s3.go.tmpl", filepath.Join("internal", "storage", "s3.go")},
 	}
 	if !apiOnly {
 		files = append(files,
@@ -81,9 +83,16 @@ func Uploads(root, module string, apiOnly, force bool) error {
 		fmt.Println("  inject  internal/routes/routes.go")
 	}
 
-	if err := ensureEnvVars(root, "STORAGE_DIR", `
-# File uploads (gor g uploads)
-# STORAGE_DIR=./storage/uploads
+	if err := ensureEnvVars(root, "STORAGE_DRIVER", `
+# File uploads (gor g uploads): disk (default) or any S3-compatible store
+# STORAGE_DRIVER=s3
+# STORAGE_DIR=./storage/uploads        # disk driver
+# S3_ENDPOINT=s3.amazonaws.com         # or <account>.r2.cloudflarestorage.com, localhost:9000 (MinIO)
+# S3_REGION=us-east-1
+# S3_BUCKET=
+# S3_ACCESS_KEY=
+# S3_SECRET_KEY=
+# S3_PUBLIC_URL=                       # optional CDN/public base; default <endpoint>/<bucket>
 `); err != nil {
 		return err
 	}
@@ -99,14 +108,16 @@ func Uploads(root, module string, apiOnly, force bool) error {
 		visibility = "behind auth.Require (sign-in needed to upload)"
 	}
 	fmt.Printf(`
-File uploads set up (local disk; STORAGE_DIR overrides the location).
+File uploads set up: disk driver by default, any S3-compatible store via
+STORAGE_DRIVER=s3 (AWS, R2, MinIO, Spaces — see .env.example).
 
   Endpoint:   POST /api/uploads, 10MB limit (%s)
-  Serving:    GET /uploads/<key>
+  Serving:    GET /uploads/<key> (disk) or the store's public URL (s3)
   Resources:  gor g resource doc title:string attachment:file
               — forms get an upload control, the column stores the URL
 
-In production, mount a persistent volume at the storage directory.
+In production: mount a persistent volume at STORAGE_DIR, or set the s3
+driver and point it at a publicly readable bucket (or CDN via S3_PUBLIC_URL).
 `, visibility)
 	return nil
 }

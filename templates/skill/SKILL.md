@@ -27,14 +27,15 @@ gor dev                       # API :8080, web :5173, worker if present
 ```
 
 Field types: `string text int bigint bool decimal timestamp uuid references file`.
-Resource names are singular; gor pluralizes. List endpoints support
+Resource names are singular; gor pluralizes. --headless generates frontend building blocks (schema, hooks, props-driven Form) without pages/routes. Per-app flag defaults: .gor/config.json {"resource":{"headless":true}}; explicit flags override. List endpoints support
 `page`, `perPage`, `sort=newest|oldest`, and `search=` (when string/text
 fields exist).
 
 ## Generators
 
 ```bash
-gor g resource <name> <field:type>... [--service] [--api-only] [--protected] [--live] [--force]
+gor g resource <name> <field:type>... [--service] [--api-only] [--protected] [--live] [--headless] [--force]
+gor g model <name> <field:type>...                     # data layer only: migration + queries
 gor g migration add_<x>_to_<table> <field:type>...     # or remove_<x>_from_<table>; auto-regens derived files
 gor g sync <resource> [--live|--no-live] [--protected|--no-protected]   # regen + toggle flags
 gor g auth                    # cookie sessions, roles, guards, login/register UI

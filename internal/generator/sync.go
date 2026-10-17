@@ -57,7 +57,16 @@ func Sync(root, module, name string, changes *FlagChanges) error {
 		r.RouteGroup = "protected"
 	}
 	r.Live = entry.Live
-	opts := Options{Name: name, Service: entry.Service, APIOnly: entry.APIOnly, Protected: entry.Protected, Live: entry.Live}
+	r.Headless = entry.Headless
+	opts := Options{
+		Name:      name,
+		Service:   entry.Service,
+		APIOnly:   entry.APIOnly,
+		Protected: entry.Protected,
+		Live:      entry.Live,
+		Headless:  entry.Headless,
+		ModelOnly: entry.ModelOnly,
+	}
 
 	var skipped []string
 	for _, f := range planFiles(r, opts, "") {
@@ -82,18 +91,20 @@ func Sync(root, module, name string, changes *FlagChanges) error {
 		entry.Files[f.path] = hashContent(content)
 	}
 
-	if err := moveBackendRegistration(root, r); err != nil {
-		return err
-	}
-	if err := wireBackendRoutes(root, r); err != nil {
-		return err
-	}
-	if !entry.APIOnly {
-		if err := moveFrontendBlock(root, r); err != nil {
+	if !entry.ModelOnly {
+		if err := moveBackendRegistration(root, r); err != nil {
 			return err
 		}
-		if err := wireFrontendRoutes(root, r); err != nil {
+		if err := wireBackendRoutes(root, r); err != nil {
 			return err
+		}
+		if !entry.APIOnly && !entry.Headless {
+			if err := moveFrontendBlock(root, r); err != nil {
+				return err
+			}
+			if err := wireFrontendRoutes(root, r); err != nil {
+				return err
+			}
 		}
 	}
 	if err := manifest.save(root); err != nil {

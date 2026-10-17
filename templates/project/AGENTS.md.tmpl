@@ -13,6 +13,7 @@ everything consistently.
 
 ```bash
 gor g resource post title:string body:text published:bool   # full-stack CRUD
+gor g model tag name:string                                 # data layer only (no API/frontend)
 gor g migration add_slug_to_posts slug:string               # schema change + auto-regen
 gor g sync post --live                                      # toggle flags on existing resource
 gor g auth            # sessions, roles, guards, login UI
@@ -25,7 +26,9 @@ gor g uploads         # file storage + upload control (field type: file)
 
 Field types: `string text int bigint bool decimal timestamp uuid references file`.
 Resource flags: `--protected` (needs auth), `--live` (needs realtime),
-`--service`, `--api-only`, `--force`.
+`--headless` (schema/hooks/Form building blocks, no pages/routes),
+`--service`, `--api-only`, `--force`. Per-app flag defaults can live in
+`.gor/config.json` (`{ "resource": { "headless": true } }`); explicit flags win.
 
 ## Rules
 

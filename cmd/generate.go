@@ -21,7 +21,7 @@ func init() {
 		Short:   "Generate code (resource)",
 	}
 
-	var service, apiOnly, protected, live, force bool
+	var service, apiOnly, protected, live, headless, force bool
 	resourceCmd := &cobra.Command{
 		Use:   "resource <name> <field:type>...",
 		Short: "Generate a full CRUD resource (migration, queries, handlers, React pages)",
@@ -48,13 +48,25 @@ func init() {
 			if err != nil {
 				return err
 			}
+			// Per-app defaults (.gor/config.json); explicit flags win.
+			cfg, err := generator.LoadConfig(root)
+			if err != nil {
+				return err
+			}
+			flagOr := func(flag string, value, fallback bool) bool {
+				if cmd.Flags().Changed(flag) {
+					return value
+				}
+				return fallback
+			}
 			return generator.Generate(root, module, generator.Options{
 				Name:      name,
 				Fields:    parsed,
-				Service:   service,
-				APIOnly:   apiOnly,
-				Protected: protected,
-				Live:      live,
+				Service:   flagOr("service", service, cfg.Resource.Service),
+				APIOnly:   flagOr("api-only", apiOnly, cfg.Resource.APIOnly),
+				Protected: flagOr("protected", protected, cfg.Resource.Protected),
+				Live:      flagOr("live", live, cfg.Resource.Live),
+				Headless:  flagOr("headless", headless, cfg.Resource.Headless),
 				Force:     force,
 			})
 		},
@@ -63,6 +75,7 @@ func init() {
 	resourceCmd.Flags().BoolVar(&apiOnly, "api-only", false, "skip frontend generation")
 	resourceCmd.Flags().BoolVar(&protected, "protected", false, "require a signed-in user (needs `gor g auth` first)")
 	resourceCmd.Flags().BoolVar(&live, "live", false, "publish mutations + live-updating pages (needs `gor g realtime` first)")
+	resourceCmd.Flags().BoolVar(&headless, "headless", false, "frontend building blocks only: schema, hooks, props-driven Form — no pages or routes")
 	resourceCmd.Flags().BoolVar(&force, "force", false, "overwrite existing files")
 
 	migrationCmd := &cobra.Command{
@@ -299,7 +312,40 @@ func init() {
 	authEmailsCmd.Flags().BoolVar(&authEmailsAPIOnly, "api-only", false, "skip frontend generation")
 	authEmailsCmd.Flags().BoolVar(&authEmailsForce, "force", false, "overwrite existing files")
 
+	var modelForce bool
+	modelCmd := &cobra.Command{
+		Use:   "model <name> <field:type>...",
+		Short: "Generate the data layer only: migration + sqlc queries (no API, no frontend)",
+		Args:  cobra.MinimumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			if !resourceNameRe.MatchString(name) {
+				return fmt.Errorf("model name %q must be lower_snake_case, starting with a letter", name)
+			}
+			parsed, err := fields.Parse(args[1:])
+			if err != nil {
+				return err
+			}
+			root, err := project.Root()
+			if err != nil {
+				return err
+			}
+			module, err := project.Module(root)
+			if err != nil {
+				return err
+			}
+			return generator.Generate(root, module, generator.Options{
+				Name:      name,
+				Fields:    parsed,
+				ModelOnly: true,
+				Force:     modelForce,
+			})
+		},
+	}
+	modelCmd.Flags().BoolVar(&modelForce, "force", false, "overwrite existing files")
+
 	generateCmd.AddCommand(resourceCmd)
+	generateCmd.AddCommand(modelCmd)
 	generateCmd.AddCommand(migrationCmd)
 	generateCmd.AddCommand(authCmd)
 	generateCmd.AddCommand(authEmailsCmd)

@@ -55,8 +55,38 @@ across those fields), with matching controls on the generated List page.
 - `--live` — realtime resource (needs [`gor g realtime`](realtime.md)):
   handlers publish on create/update/delete and the List/Detail pages
   subscribe, so every open browser updates without a reload
+- `--headless` — frontend building blocks only: Zod schema, typed client +
+  hooks, and a props-driven `<XForm id? onSuccess? onCancel? />` with no
+  router coupling — embed it in modals, wizards, or your own pages. No
+  List/Detail pages, nothing injected into routes or nav
 - `--force` — overwrite existing files (an existing create-table migration is
   kept, never duplicated)
 
 Toggle `--live`/`--protected` on an existing resource later with
 [`gor g sync`](migrations.md#gor-g-sync-resource).
+
+## Per-app flag defaults
+
+If your project always wants certain flags (e.g. you build custom pages and
+only want headless building blocks), set defaults once in
+`.gor/config.json` — the gor equivalent of Rails' `config.generators`:
+
+```json
+{ "resource": { "headless": true, "service": true } }
+```
+
+Explicit CLI flags always override the config (`--headless=false` brings
+the pages back for one resource).
+
+## `gor g model <name> <field:type>...`
+
+The data layer only — migration + sqlc queries, no API and no frontend.
+For internal tables (settings, join tables, logs) that handlers and jobs
+query directly:
+
+```bash
+gor g model tag name:string
+```
+
+Promote it to a full resource later with
+`gor g resource tag <same fields> --force`.

@@ -1,0 +1,79 @@
+package storage
+
+import (
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"sync"
+
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
+)
+
+// The s3 driver works with any S3-compatible store: AWS S3, Cloudflare R2,
+// MinIO, DigitalOcean Spaces. Configuration (env):
+//
+//	S3_ENDPOINT    s3.amazonaws.com | <account>.r2.cloudflarestorage.com | localhost:9000
+//	S3_REGION      e.g. us-east-1 (some providers ignore it)
+//	S3_BUCKET      bucket name; must exist
+//	S3_ACCESS_KEY / S3_SECRET_KEY
+//	S3_PUBLIC_URL  optional public/CDN base for stored URLs; defaults to
+//	               <endpoint>/<bucket> — the bucket must be publicly
+//	               readable (or fronted by a CDN) for URLs to resolve.
+var (
+	s3Once   sync.Once
+	s3Client *minio.Client
+	s3Err    error
+)
+
+func s3client() (*minio.Client, error) {
+	s3Once.Do(func() {
+		endpoint := os.Getenv("S3_ENDPOINT")
+		if endpoint == "" {
+			s3Err = fmt.Errorf("STORAGE_DRIVER=s3 needs S3_ENDPOINT (plus S3_BUCKET and credentials)")
+			return
+		}
+		secure := !strings.HasPrefix(endpoint, "http://")
+		endpoint = strings.TrimPrefix(strings.TrimPrefix(endpoint, "https://"), "http://")
+		s3Client, s3Err = minio.New(endpoint, &minio.Options{
+			Creds:  credentials.NewStaticV4(os.Getenv("S3_ACCESS_KEY"), os.Getenv("S3_SECRET_KEY"), ""),
+			Secure: secure,
+			Region: os.Getenv("S3_REGION"),
+		})
+	})
+	return s3Client, s3Err
+}
+
+func s3Save(ctx context.Context, key, filename, contentType string, r io.Reader, size int64) (Upload, error) {
+	client, err := s3client()
+	if err != nil {
+		return Upload{}, err
+	}
+	bucket := os.Getenv("S3_BUCKET")
+	if bucket == "" {
+		return Upload{}, fmt.Errorf("STORAGE_DRIVER=s3 needs S3_BUCKET")
+	}
+	info, err := client.PutObject(ctx, bucket, key, r, size, minio.PutObjectOptions{
+		ContentType: contentType,
+	})
+	if err != nil {
+		return Upload{}, fmt.Errorf("s3 upload: %w", err)
+	}
+
+	base := os.Getenv("S3_PUBLIC_URL")
+	if base == "" {
+		scheme := "https"
+		if strings.HasPrefix(os.Getenv("S3_ENDPOINT"), "http://") {
+			scheme = "http"
+		}
+		base = scheme + "://" + client.EndpointURL().Host + "/" + bucket
+	}
+	return Upload{
+		URL:         strings.TrimRight(base, "/") + "/" + key,
+		Filename:    filename,
+		ContentType: contentType,
+		Size:        info.Size,
+	}, nil
+}

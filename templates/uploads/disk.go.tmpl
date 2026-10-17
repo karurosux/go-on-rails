@@ -1,0 +1,40 @@
+package storage
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+)
+
+// Dir returns the disk driver's directory (STORAGE_DIR, default
+// ./storage/uploads). In production, mount a persistent volume here —
+// or use the s3 driver instead.
+func Dir() string {
+	if dir := os.Getenv("STORAGE_DIR"); dir != "" {
+		return dir
+	}
+	return "./storage/uploads"
+}
+
+// diskSave writes the file under Dir(); it's served at /uploads/<key>.
+func diskSave(key, filename, contentType string, r io.Reader) (Upload, error) {
+	dir := Dir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return Upload{}, err
+	}
+	dst, err := os.Create(filepath.Join(dir, key))
+	if err != nil {
+		return Upload{}, err
+	}
+	defer dst.Close()
+	size, err := io.Copy(dst, r)
+	if err != nil {
+		return Upload{}, err
+	}
+	return Upload{
+		URL:         "/uploads/" + key,
+		Filename:    filename,
+		ContentType: contentType,
+		Size:        size,
+	}, nil
+}

@@ -1,10 +1,15 @@
-// Package storage saves uploaded files to local disk and serves them at
-// /uploads/*. Resources store the returned URL in a plain text column
-// (field type `file`). Swap Save for an S3-compatible client when a single
-// disk stops being enough — the handler and frontend stay the same.
+// Package storage saves uploaded files and serves/returns their URLs.
+// Resources store the returned URL in a plain text column (field type
+// `file`).
+//
+// Two drivers, chosen at runtime by STORAGE_DRIVER:
+//   - "disk" (default): local directory, served at /uploads/* (disk.go)
+//   - "s3": any S3-compatible store — AWS S3, Cloudflare R2, MinIO,
+//     DigitalOcean Spaces (s3.go)
 package storage
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -18,15 +23,6 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Dir returns the upload directory (STORAGE_DIR, default ./storage/uploads).
-// In production, mount a persistent volume here.
-func Dir() string {
-	if dir := os.Getenv("STORAGE_DIR"); dir != "" {
-		return dir
-	}
-	return "./storage/uploads"
-}
-
 // Upload is the response for a stored file.
 type Upload struct {
 	URL         string `json:"url"`
@@ -37,39 +33,34 @@ type Upload struct {
 
 var extRe = regexp.MustCompile(`^\.[a-z0-9]{1,8}$`)
 
-// Save streams r to disk under a random name (keeping a sanitized version
-// of the original extension) and returns the public URL.
-func Save(filename, contentType string, r io.Reader) (Upload, error) {
+// newKey returns a random object key, keeping a sanitized extension.
+func newKey(filename string) (string, error) {
 	ext := strings.ToLower(filepath.Ext(filename))
 	if !extRe.MatchString(ext) {
 		ext = ""
 	}
 	b := make([]byte, 16)
 	if _, err := rand.Read(b); err != nil {
-		return Upload{}, err
+		return "", err
 	}
-	key := hex.EncodeToString(b) + ext
+	return hex.EncodeToString(b) + ext, nil
+}
 
-	dir := Dir()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return Upload{}, err
-	}
-	dst, err := os.Create(filepath.Join(dir, key))
+// Save streams r to the configured driver and returns the public URL.
+// size may be -1 when unknown.
+func Save(ctx context.Context, filename, contentType string, r io.Reader, size int64) (Upload, error) {
+	key, err := newKey(filename)
 	if err != nil {
 		return Upload{}, err
 	}
-	defer dst.Close()
-	size, err := io.Copy(dst, r)
-	if err != nil {
-		return Upload{}, err
+	switch driver := os.Getenv("STORAGE_DRIVER"); driver {
+	case "", "disk":
+		return diskSave(key, filename, contentType, r)
+	case "s3":
+		return s3Save(ctx, key, filename, contentType, r, size)
+	default:
+		return Upload{}, fmt.Errorf("unknown STORAGE_DRIVER %q (want disk or s3)", driver)
 	}
-
-	return Upload{
-		URL:         "/uploads/" + key,
-		Filename:    filename,
-		ContentType: contentType,
-		Size:        size,
-	}, nil
 }
 
 // Handler accepts a multipart "file" field (POST /api/uploads) and stores it.
@@ -85,7 +76,8 @@ func Handler() echo.HandlerFunc {
 		}
 		defer src.Close()
 
-		upload, err := Save(fileHeader.Filename, fileHeader.Header.Get("Content-Type"), src)
+		upload, err := Save(c.Request().Context(), fileHeader.Filename,
+			fileHeader.Header.Get("Content-Type"), src, fileHeader.Size)
 		if err != nil {
 			return err
 		}

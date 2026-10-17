@@ -72,6 +72,22 @@ func TestTemplatesRenderNonGo(t *testing.T) {
 	}
 }
 
+func TestHeadlessFormRenders(t *testing.T) {
+	r := BuildResource("myapp", "post", sampleFields(t), false)
+	r.Headless = true
+	out, err := render.File("resource/web/Form.tsx.tmpl", r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if strings.Contains(s, "useNavigate") || strings.Contains(s, "useParams") || strings.Contains(s, "react-router") {
+		t.Error("headless Form must not depend on the router")
+	}
+	if !strings.Contains(s, "onSuccess?: (item: Post) => void") {
+		t.Error("headless Form should expose an onSuccess prop")
+	}
+}
+
 func TestBuildResource(t *testing.T) {
 	r := BuildResource("myapp", "blog_post", sampleFields(t), true)
 
