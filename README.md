@@ -95,5 +95,9 @@ feature-folder layout are the extension points for anything you add
 
 ```bash
 go test ./...          # field parser, type mappings, injection, template rendering
+./scripts/smoke.sh     # scaffold a throwaway app, run every generator, compile + typecheck
 go install ./cmd/gor   # install your local build
 ```
+
+CI runs both on every push and pull request. Releases are tagged
+(`vX.Y.Z`) and recorded in [CHANGELOG.md](CHANGELOG.md).
