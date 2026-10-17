@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## v0.2.0
+
+- Generator plugins: `gor plugins install <git-url|path>` (user-wide or
+  `--project`) installs declarative third-party generators that appear as
+  `gor g <name>` — files, marker injections, env defaults, and allowlisted
+  post-runs, no plugin code execution. Example: `examples/plugins/sysinfo`.
 
 - `gor g model <name> <fields>`: data layer only (migration + sqlc
   queries) for internal tables.

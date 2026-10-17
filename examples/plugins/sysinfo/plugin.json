@@ -1,0 +1,15 @@
+{
+  "name": "sysinfo",
+  "description": "Expose build/runtime info at /api/sysinfo with a frontend hook",
+  "files": [
+    {"template": "templates/sysinfo.go.tmpl", "path": "internal/sysinfo/sysinfo.go"},
+    {"template": "templates/useSysinfo.ts.tmpl", "path": "web/src/api/sysinfo.ts"}
+  ],
+  "injections": [
+    {"file": "internal/routes/routes.go", "marker": "// gor:imports", "snippet": "templates/import.snippet"},
+    {"file": "internal/routes/routes.go", "marker": "// gor:routes", "snippet": "templates/route.snippet"}
+  ],
+  "env": {"sentinel": "SYSINFO_LABEL", "file": "templates/env.tmpl"},
+  "postRun": ["tidy"],
+  "message": "sysinfo installed: GET /api/sysinfo, useSysinfo() in web/src/api/sysinfo.ts"
+}

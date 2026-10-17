@@ -41,6 +41,8 @@ echo "==> generators"
 "$GOR" g migration add_slug_to_posts slug:string
 "$GOR" g sync post --no-live
 "$GOR" skills install --project
+"$GOR" plugins install "$ROOT/examples/plugins/sysinfo" --project
+"$GOR" g sysinfo
 
 echo "==> backend: vet + build + tests"
 go vet ./...

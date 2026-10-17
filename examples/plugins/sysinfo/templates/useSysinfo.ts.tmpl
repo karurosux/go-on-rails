@@ -1,0 +1,15 @@
+import { useQuery } from "@tanstack/react-query";
+import { api } from "./client";
+
+export interface Sysinfo {
+  app: string;
+  go: string;
+  label: string;
+}
+
+export function useSysinfo() {
+  return useQuery({
+    queryKey: ["sysinfo"],
+    queryFn: () => api.get<Sysinfo>("/api/sysinfo"),
+  });
+}

@@ -64,6 +64,7 @@ pages at `/posts`, with validation on both sides.
 | [File uploads](docs/uploads.md) | `g uploads` | disk storage, upload control, `file` fields |
 | [Deployment](docs/deployment.md) | `build`, `build --image` | single binary, Docker image, worker, runtime config |
 | [AI agents](docs/ai.md) | `skills install` | AGENTS.md in every app, installable Claude Code skill |
+| [Generator plugins](docs/plugins.md) | `plugins install` | third-party generators (e.g. a Stripe pack) as `gor g <name>` |
 
 ## Conventions
 

@@ -355,5 +355,34 @@ func init() {
 	generateCmd.AddCommand(mailerCmd)
 	generateCmd.AddCommand(uploadsCmd)
 	generateCmd.AddCommand(syncCmd)
+
+	// Installed generator plugins appear as g subcommands.
+	if plugins, err := generator.LoadPlugins(bestEffortRoot()); err == nil {
+		for _, p := range plugins {
+			plugin := p
+			var pluginForce bool
+			pluginCmd := &cobra.Command{
+				Use:   plugin.Manifest.Name,
+				Short: plugin.Manifest.Description + " (plugin)",
+				RunE: func(cmd *cobra.Command, args []string) error {
+					root, err := project.Root()
+					if err != nil {
+						return err
+					}
+					module, err := project.Module(root)
+					if err != nil {
+						return err
+					}
+					app, err := project.AppName(root)
+					if err != nil {
+						return err
+					}
+					return generator.RunPlugin(plugin, root, module, app, args, pluginForce)
+				},
+			}
+			pluginCmd.Flags().BoolVar(&pluginForce, "force", false, "overwrite existing files")
+			generateCmd.AddCommand(pluginCmd)
+		}
+	}
 	rootCmd.AddCommand(generateCmd)
 }
