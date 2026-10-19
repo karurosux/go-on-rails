@@ -170,16 +170,24 @@ func wireAuthFrontend(root string) error {
 	if _, err := inject.InsertBefore(routesTsx, "// gor:imports", strings.TrimRight(string(imports), "\n")); err != nil {
 		return err
 	}
-	routeBlock, err := render.File("auth/snippets/web_routes.tmpl", nil)
-	if err != nil {
-		return err
-	}
-	changed, err := inject.InsertBefore(routesTsx, "{/* gor:routes */}", strings.TrimRight(string(routeBlock), "\n"))
-	if err != nil {
-		return err
-	}
-	if changed {
-		fmt.Println("  inject  web/src/routes.tsx")
+	// The route block changed shape over time (login/register are now
+	// wrapped in <RequireGuest />); if auth routes already exist from an
+	// earlier generation, leave them alone instead of injecting duplicates.
+	if raw, err := os.ReadFile(routesTsx); err == nil && strings.Contains(string(raw), `path="login"`) &&
+		!strings.Contains(string(raw), "<RequireGuest />") {
+		fmt.Println("  note    web/src/routes.tsx already has auth routes — wrap /login and /register in <Route element={<RequireGuest />}> yourself for the guest-only guard")
+	} else {
+		routeBlock, err := render.File("auth/snippets/web_routes.tmpl", nil)
+		if err != nil {
+			return err
+		}
+		changed, err := inject.InsertBefore(routesTsx, "{/* gor:routes */}", strings.TrimRight(string(routeBlock), "\n"))
+		if err != nil {
+			return err
+		}
+		if changed {
+			fmt.Println("  inject  web/src/routes.tsx")
+		}
 	}
 
 	// App.tsx: nav import + <AuthNav /> at the end of the nav. These are
@@ -189,12 +197,12 @@ func wireAuthFrontend(root string) error {
 		fmt.Printf("  warning: could not add AuthNav import to App.tsx (%v) — add it yourself\n", err)
 		return nil
 	}
-	changed, err = inject.InsertBefore(appTsx, "</nav>", "<AuthNav />")
+	navChanged, err := inject.InsertBefore(appTsx, "</nav>", "<AuthNav />")
 	if err != nil {
 		fmt.Printf("  warning: could not add <AuthNav /> to App.tsx (%v) — add it yourself\n", err)
 		return nil
 	}
-	if changed {
+	if navChanged {
 		fmt.Println("  inject  web/src/App.tsx")
 	}
 	return nil

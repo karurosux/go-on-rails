@@ -29,9 +29,21 @@ func LoginRateLimit() echo.MiddlewareFunc {
 // CSRF rejects state-changing requests from other origins, complementing
 // the SameSite=Lax session cookie. Browsers always send an Origin header on
 // cross-site requests; same-origin requests and non-browser clients (no
-// Origin header) pass. If you deploy behind a proxy that rewrites the Host
-// header, adjust the comparison here.
+// Origin header) pass.
+//
+// It is disabled outside production: the Vite dev server proxies /api with
+// a rewritten Host header, which would otherwise look cross-origin. In
+// production the SPA is served same-origin by the Go binary, so Origin and
+// Host match; if you front the app with a proxy that rewrites Host, set
+// APP_URL and that origin is allowed too.
 func CSRF() echo.MiddlewareFunc {
+	if os.Getenv("APP_ENV") != "production" {
+		return func(next echo.HandlerFunc) echo.HandlerFunc { return next }
+	}
+	allowedHost := ""
+	if appURL, err := url.Parse(os.Getenv("APP_URL")); err == nil {
+		allowedHost = appURL.Host
+	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			switch c.Request().Method {
@@ -43,7 +55,7 @@ func CSRF() echo.MiddlewareFunc {
 				return next(c)
 			}
 			parsed, err := url.Parse(origin)
-			if err != nil || parsed.Host != c.Request().Host {
+			if err != nil || (parsed.Host != c.Request().Host && (allowedHost == "" || parsed.Host != allowedHost)) {
 				return echo.NewHTTPError(http.StatusForbidden, "cross-origin request rejected")
 			}
 			return next(c)
@@ -101,6 +113,17 @@ func Require(next echo.HandlerFunc) echo.HandlerFunc {
 	return func(c echo.Context) error {
 		if CurrentUser(c) == nil {
 			return echo.NewHTTPError(http.StatusUnauthorized, "authentication required")
+		}
+		return next(c)
+	}
+}
+
+// RequireGuest rejects requests from signed-in users — for endpoints that
+// only make sense anonymously, like login and register.
+func RequireGuest(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		if CurrentUser(c) != nil {
+			return echo.NewHTTPError(http.StatusForbidden, "already signed in")
 		}
 		return next(c)
 	}

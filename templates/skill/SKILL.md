@@ -90,8 +90,8 @@ STORAGE_DIR. Generators append working dev defaults to .env.example/.env.
 
 ## In-code APIs (generated packages)
 
-- `auth.Require`, `auth.RequireRole("admin")`, `auth.CurrentUser(c)`;
-  frontend `<RequireAuth/>`, `<RequireRole/>`, `<SignedIn/>`, `<RoleGate/>`
+- `auth.Require`, `auth.RequireRole("admin")`, `auth.RequireGuest`, `auth.CurrentUser(c)`;
+  frontend `<RequireAuth/>`, `<RequireRole/>`, `<RequireGuest/>`, `<SignedIn/>`, `<RoleGate/>`
 - `jobs.Enqueue(ctx, jobs.XArgs{...})`
 - `realtime.Publish(ctx, "channel", payload)`; frontend
   `useRealtime(ch, fn)`, `useRealtimeInvalidate(ch, queryKey)`

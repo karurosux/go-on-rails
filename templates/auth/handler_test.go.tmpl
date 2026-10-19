@@ -10,6 +10,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	dbgen "{{.Module}}/internal/db/gen"
 	"{{.Module}}/internal/httpx"
 )
 
@@ -27,6 +28,7 @@ func newTestServer() *echo.Echo {
 }
 
 func TestCSRFRejectsCrossOrigin(t *testing.T) {
+	t.Setenv("APP_ENV", "production") // CSRF is a no-op outside production
 	e := newTestServer()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	req.Header.Set("Origin", "https://evil.example")
@@ -40,6 +42,7 @@ func TestCSRFRejectsCrossOrigin(t *testing.T) {
 }
 
 func TestCSRFAllowsSameOrigin(t *testing.T) {
+	t.Setenv("APP_ENV", "production")
 	e := newTestServer()
 	req := httptest.NewRequest(http.MethodPost, "/api/auth/logout", nil)
 	req.Header.Set("Origin", "http://"+req.Host)
@@ -75,6 +78,27 @@ func TestMeRequiresSession(t *testing.T) {
 
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("expected 401, got %d: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRequireGuestRejectsSignedIn(t *testing.T) {
+	e := echo.New()
+	e.HTTPErrorHandler = httpx.ErrorHandler(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	// Simulate a resolved session the way Middleware would set it.
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			c.Set(userContextKey, &dbgen.User{})
+			return next(c)
+		}
+	})
+	e.POST("/api/auth/login", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, RequireGuest)
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/login", nil)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403 for a signed-in user, got %d: %s", rec.Code, rec.Body)
 	}
 }
 

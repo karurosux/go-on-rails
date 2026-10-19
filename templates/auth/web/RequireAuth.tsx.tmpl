@@ -12,6 +12,22 @@ export function RequireAuth() {
   return <Outlet />;
 }
 
+// RequireGuest wraps routes that only make sense signed out (login,
+// register); signed-in visitors are sent home — or back to where the login
+// redirect brought them from.
+export function RequireGuest() {
+  const { data: user, isLoading } = useMe();
+  const location = useLocation();
+
+  if (isLoading) return <p className="text-muted-foreground">Loading…</p>;
+  if (user) {
+    const from =
+      (location.state as { from?: { pathname?: string } } | null)?.from?.pathname ?? "/";
+    return <Navigate to={from} replace />;
+  }
+  return <Outlet />;
+}
+
 // RequireRole wraps routes that need a specific role, e.g.
 // <Route element={<RequireRole role="admin" />}>...</Route>
 export function RequireRole({ role }: { role: string }) {

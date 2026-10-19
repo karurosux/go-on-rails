@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.3.0
+
+- Auth gains the guest-only guard: `auth.RequireGuest` middleware (login
+  and register now return 403 for signed-in users) and a `<RequireGuest />`
+  route guard wrapping /login and /register, redirecting signed-in
+  visitors back to where they came from. Existing apps: re-run
+  `gor g auth --force` (auth routes in routes.tsx are left as-is — wrap
+  them in `<Route element={<RequireGuest />}>` yourself).
+
+- Fix: the CSRF middleware rejected every mutation in development ("cross-
+  origin request rejected") because the Vite proxy rewrites the Host header
+  while the browser's Origin stays on the dev-server port. `auth.CSRF()` is
+  now a no-op outside production, and in production it additionally allows
+  the `APP_URL` origin for Host-rewriting proxies. Existing apps: replace
+  the `CSRF` function in `internal/auth/middleware.go` (or re-run
+  `gor g auth --force` if your auth files are unmodified).
+
 ## v0.2.0
 
 - Generator plugins: `gor plugins install <git-url|path>` (user-wide or

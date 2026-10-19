@@ -7,11 +7,13 @@ Cookie-session authentication, generated as plain code you own:
 - `users` + `sessions` tables (bcrypt passwords, hashed session tokens,
   sliding 7-day expiry, `role` column defaulting to `user`)
 - `internal/auth/`: middleware + guards — `auth.Require`,
-  `auth.RequireRole("admin")`, `auth.CurrentUser(c)` — and endpoints
+  `auth.RequireRole("admin")`, `auth.RequireGuest` (guest-only endpoints
+  like login/register), `auth.CurrentUser(c)` — and endpoints
   `POST /api/auth/register|login|logout`, `GET /api/auth/me`
-- `/login` and `/register` pages, session-aware nav, a `<RequireAuth />`
-  route guard (plus `<RequireRole />`), and inline gates (`<SignedIn>`,
-  `<SignedOut>`, `<RoleGate>`) on the frontend
+- `/login` and `/register` pages, session-aware nav, route guards —
+  `<RequireAuth />`, `<RequireRole />`, and `<RequireGuest />` (signed-in
+  visitors to login/register are sent back where they came from) — and
+  inline gates (`<SignedIn>`, `<SignedOut>`, `<RoleGate>`) on the frontend
 
 ## Protecting resources
 

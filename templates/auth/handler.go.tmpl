@@ -21,12 +21,12 @@ type Handler struct {
 	secure bool // Secure cookies outside development
 }
 
-// Register mounts the auth routes on the API group. Only register and
-// login are public; everything else requires a session.
+// Register mounts the auth routes on the API group. Register and login are
+// guest-only (signed-in users get 403); everything else requires a session.
 func Register(g *echo.Group, q *dbgen.Queries) {
 	h := &Handler{q: q, secure: os.Getenv("APP_ENV") == "production"}
-	g.POST("/auth/register", h.register, LoginRateLimit())
-	g.POST("/auth/login", h.login, LoginRateLimit())
+	g.POST("/auth/register", h.register, RequireGuest, LoginRateLimit())
+	g.POST("/auth/login", h.login, RequireGuest, LoginRateLimit())
 	g.POST("/auth/logout", h.logout, Require)
 	g.GET("/auth/me", h.me, Require)
 }
