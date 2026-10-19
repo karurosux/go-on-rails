@@ -22,6 +22,7 @@ gor g jobs && gor g job send_welcome_email [--every 1h|--cron "0 9 * * *"] [--li
 gor g realtime        # SSE + Postgres NOTIFY, React hooks
 gor g mailer welcome  # SMTP email + Mailpit dev catcher
 gor g uploads         # file storage + upload control (field type: file)
+gor g observability   # error reports (SENTRY_DSN) + Prometheus /metrics
 ```
 
 Field types: `string text int bigint bool decimal timestamp uuid references file`.

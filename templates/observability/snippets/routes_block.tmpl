@@ -1,0 +1,5 @@
+obs.Init()
+e.HTTPErrorHandler = obs.WrapErrorHandler(e.HTTPErrorHandler)
+e.Use(echoprometheus.NewMiddleware("{{.MetricsSubsystem}}"))
+e.GET("/metrics", echoprometheus.NewHandler())
+

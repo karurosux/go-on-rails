@@ -15,48 +15,53 @@ func init() {
 
 	installCmd := &cobra.Command{
 		Use:   "install",
-		Short: "Install the gor skill for AI coding agents (Claude Code)",
-		Long: "Install the gor skill so AI coding agents know to use gor's generators\n" +
-			"instead of hand-writing boilerplate.\n\n" +
-			"By default it installs user-wide (~/.claude/skills/gor); --project\n" +
-			"installs into the current project's .claude/skills/gor instead, so the\n" +
-			"skill ships with the repo.",
+		Short: "Install the gor skills for AI coding agents (Claude Code)",
+		Long: "Install the gor skills so AI coding agents know how to use gor's\n" +
+			"generators (gor) and how to author generator plugins (gor-plugins).\n\n" +
+			"By default they install user-wide (~/.claude/skills); --project installs\n" +
+			"into the current project's .claude/skills instead, so they ship with the repo.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			content, err := templates.FS.ReadFile("skill/SKILL.md")
-			if err != nil {
-				return err
-			}
-
-			var dir string
+			var base string
 			if project {
-				dir = filepath.Join(".claude", "skills", "gor")
+				base = filepath.Join(".claude", "skills")
 			} else {
 				home, err := os.UserHomeDir()
 				if err != nil {
 					return err
 				}
-				dir = filepath.Join(home, ".claude", "skills", "gor")
-			}
-			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return err
-			}
-			path := filepath.Join(dir, "SKILL.md")
-			if err := os.WriteFile(path, content, 0o644); err != nil {
-				return err
+				base = filepath.Join(home, ".claude", "skills")
 			}
 
-			fmt.Printf("Installed the gor skill at %s\n", path)
-			fmt.Println("AI agents with skill support (e.g. Claude Code) will now reach for")
-			fmt.Println("gor's generators when working on gor apps. Re-run after upgrading gor.")
+			skills := []struct{ source, name string }{
+				{"skill/SKILL.md", "gor"},
+				{"skill/PLUGIN_SKILL.md", "gor-plugins"},
+			}
+			for _, s := range skills {
+				content, err := templates.FS.ReadFile(s.source)
+				if err != nil {
+					return err
+				}
+				dir := filepath.Join(base, s.name)
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					return err
+				}
+				path := filepath.Join(dir, "SKILL.md")
+				if err := os.WriteFile(path, content, 0o644); err != nil {
+					return err
+				}
+				fmt.Printf("Installed skill %q at %s\n", s.name, path)
+			}
+			fmt.Println("\nAI agents with skill support (e.g. Claude Code) can now use gor's")
+			fmt.Println("generators and author gor plugins. Re-run after upgrading gor.")
 			return nil
 		},
 	}
-	installCmd.Flags().BoolVar(&project, "project", false, "install into ./.claude/skills/gor (ships with the repo)")
+	installCmd.Flags().BoolVar(&project, "project", false, "install into ./.claude/skills (ships with the repo)")
 
 	skillsCmd := &cobra.Command{
 		Use:   "skills",
-		Short: "AI agent integration (install the gor skill)",
+		Short: "AI agent integration (install the gor skills)",
 	}
 	skillsCmd.AddCommand(installCmd)
 	rootCmd.AddCommand(skillsCmd)

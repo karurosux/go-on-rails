@@ -1,0 +1,63 @@
+// Package obs wires observability: error reports to any Sentry-compatible
+// service (Sentry, GlitchTip, Bugsink — set SENTRY_DSN) and Prometheus
+// metrics at /metrics. Logs are already structured JSON via slog — point
+// your log collector at stdout.
+package obs
+
+import (
+	"log/slog"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/getsentry/sentry-go"
+	"github.com/labstack/echo/v4"
+)
+
+// Init configures error reporting from SENTRY_DSN. Without it, reporting
+// is a no-op and the app runs unchanged.
+func Init() {
+	dsn := os.Getenv("SENTRY_DSN")
+	if dsn == "" {
+		return
+	}
+	if err := sentry.Init(sentry.ClientOptions{
+		Dsn:         dsn,
+		Environment: os.Getenv("APP_ENV"),
+	}); err != nil {
+		slog.Error("error reporting init failed", "error", err)
+	}
+}
+
+// WrapErrorHandler decorates echo's error handler: after the response is
+// rendered, server errors (5xx) are reported with their request context.
+// Client errors (4xx, validation) are never reported.
+func WrapErrorHandler(next echo.HTTPErrorHandler) echo.HTTPErrorHandler {
+	return func(err error, c echo.Context) {
+		next(err, c)
+		if c.Response().Status < http.StatusInternalServerError {
+			return
+		}
+		hub := sentry.CurrentHub()
+		if hub.Client() == nil {
+			return
+		}
+		hub.WithScope(func(scope *sentry.Scope) {
+			scope.SetRequest(c.Request())
+			hub.CaptureException(err)
+		})
+	}
+}
+
+// CaptureError reports an error outside the HTTP request cycle — use it in
+// jobs or custom goroutines: obs.CaptureError(err).
+func CaptureError(err error) {
+	if hub := sentry.CurrentHub(); hub.Client() != nil {
+		hub.CaptureException(err)
+	}
+}
+
+// Flush drains pending reports (e.g. before a custom exit path).
+func Flush() {
+	sentry.Flush(2 * time.Second)
+}

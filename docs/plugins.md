@@ -8,6 +8,7 @@ subcommand:
 ```bash
 gor plugins install github.com/someone/gor-stripe   # user-wide (~/.gor/plugins)
 gor plugins install ../my-plugin --project          # ships with the repo (.gor/plugins)
+gor plugins install ../my-plugin --project --link   # dev install: symlinked, edits are live
 gor plugins list
 gor g stripe                                        # run it like any generator
 gor plugins remove stripe
@@ -17,6 +18,16 @@ Project-level plugins shadow user-level ones of the same name; plugins
 can't shadow built-in generators.
 
 ## Writing a plugin
+
+Start from a working scaffold:
+
+```bash
+gor plugins new payments     # creates ./gor-payments with an example that runs
+```
+
+The generated README documents the manifest schema, markers, and dev loop;
+the `gor-plugins` AI skill (installed by `gor skills install`) teaches the
+same to coding agents.
 
 Plugins are **declarative** — gor interprets the manifest, so running one
 never executes plugin code. They get the same primitives built-in
@@ -53,6 +64,12 @@ working example.
   already present (user values are never touched).
 - **postRun** is allowlisted: `tidy` (go mod tidy) or `sqlc`
   (sqlc generate + tidy).
+- A `{{timestamp}}` token in a file's path (e.g.
+  `migrations/{{timestamp}}_create_billing.sql`) resolves to a fresh goose
+  version when the plugin runs, so shipped migrations always sort after the
+  app's existing ones. Re-running the plugin finds the already-written file
+  by the rest of its name and overwrites it (with `--force`) instead of
+  minting a second migration.
 - Standard semantics apply: existing files refuse to be overwritten
   without `--force`.
 

@@ -1,0 +1,50 @@
+# gor-[[.Name]]
+
+A [gor](https://github.com/karurosux/go-on-rails) generator plugin. Once
+installed, it runs as `gor g [[.Name]]` inside any gor app.
+
+## Develop
+
+```bash
+gor new testapp && cd testapp                 # a throwaway app to test against
+gor plugins install ../gor-[[.Name]] --project --link
+gor g [[.Name]]                               # run it
+go build ./... && go test ./...               # verify the result compiles
+```
+
+`--link` is a dev install: the plugin is symlinked, so edits here apply
+immediately — just rerun with `gor g [[.Name]] --force`. (Don't commit the
+symlink; teammates install the published plugin instead.)
+
+## How it works
+
+`plugin.json` declares everything; gor interprets it — plugins never
+execute code:
+
+- **files** — templates rendered into the app. Template data:
+  {{.Module}}, {{.AppName}}, {{.Args}} (extra CLI args). Files ending
+  `.go.tmpl` are gofmt-checked. Add `"delims": "square"` to a file that
+  contains runtime Go-template syntax, then use square-bracket delimiters
+  for plugin values in that file (as this scaffold's templates do).
+  A `{{timestamp}}` token in a path (e.g.
+  `migrations/{{timestamp}}_create_x.sql`) becomes a fresh goose version
+  at run time; re-runs reuse the already-written file instead of minting
+  a second migration.
+- **injections** — rendered snippets inserted (idempotently) before a
+  marker. Markers available in generated apps: `// gor:imports`,
+  `// gor:routes` (routes.go); `{/* gor:routes */}`,
+  `{/* gor:protected-routes */}`, `{/* gor:nav */}` (frontend);
+  `// gor:workers`, `// gor:periodic` (jobs); `# gor:services`
+  (docker-compose).
+- **env** — appended to `.env.example`/`.env` unless the sentinel key
+  already exists.
+- **postRun** — allowlisted: `"tidy"` or `"sqlc"`.
+- **message** — printed after a successful run.
+
+## Publish
+
+Push this directory as a git repo. Users install it with:
+
+```bash
+gor plugins install https://github.com/you/gor-[[.Name]]
+```

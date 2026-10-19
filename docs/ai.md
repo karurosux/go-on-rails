@@ -26,9 +26,12 @@ full CLI workflow is available even before an app exists — scaffolding new
 projects included:
 
 ```bash
-gor skills install             # user-wide: ~/.claude/skills/gor
-gor skills install --project   # ships with the repo: .claude/skills/gor
+gor skills install             # user-wide: ~/.claude/skills/{gor,gor-plugins}
+gor skills install --project   # ships with the repo: .claude/skills/{gor,gor-plugins}
 ```
+
+Two skills are installed: `gor` (using the CLI in apps) and `gor-plugins`
+(authoring generator plugins).
 
 The skill covers the complete command surface (generators, dependencies
 between them, db/build commands, in-code APIs) and the editing rules.

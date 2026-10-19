@@ -21,23 +21,28 @@ func bestEffortRoot() string {
 }
 
 func init() {
-	var installProject bool
+	var installProject, installLink bool
 	installCmd := &cobra.Command{
 		Use:   "install <git-url|path>",
 		Short: "Install a generator plugin (user-wide, or --project to ship it with the repo)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := generator.InstallPlugin(args[0], installProject)
+			p, err := generator.InstallPlugin(args[0], installProject, installLink)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Installed plugin %q at %s\nRun it with: gor g %s\n",
-				p.Manifest.Name, p.Dir, p.Manifest.Name)
+			mode := "Installed"
+			if installLink {
+				mode = "Linked (dev install — edits are live)"
+			}
+			fmt.Printf("%s plugin %q at %s\nRun it with: gor g %s\n",
+				mode, p.Manifest.Name, p.Dir, p.Manifest.Name)
 			fmt.Println("\nNote: a plugin writes files into your apps when run — install only sources you trust.")
 			return nil
 		},
 	}
 	installCmd.Flags().BoolVar(&installProject, "project", false, "install into ./.gor/plugins (ships with the repo)")
+	installCmd.Flags().BoolVar(&installLink, "link", false, "symlink a local plugin for development — edits apply without reinstalling")
 
 	listCmd := &cobra.Command{
 		Use:   "list",
@@ -53,7 +58,11 @@ func init() {
 				return nil
 			}
 			for _, p := range plugins {
-				fmt.Printf("  %-16s %s\n      %s\n", p.Manifest.Name, p.Manifest.Description, p.Dir)
+				location := p.Dir
+				if target, err := os.Readlink(p.Dir); err == nil {
+					location = p.Dir + " -> " + target + " (linked)"
+				}
+				fmt.Printf("  %-16s %s\n      %s\n", p.Manifest.Name, p.Manifest.Description, location)
 			}
 			return nil
 		},
@@ -85,10 +94,20 @@ func init() {
 		},
 	}
 
+	newCmd := &cobra.Command{
+		Use:   "new <name>",
+		Short: "Scaffold a new generator plugin in ./gor-<name>",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return generator.PluginNew(args[0])
+		},
+	}
+
 	pluginsCmd := &cobra.Command{
 		Use:   "plugins",
 		Short: "Install and manage generator plugins",
 	}
+	pluginsCmd.AddCommand(newCmd)
 	pluginsCmd.AddCommand(installCmd)
 	pluginsCmd.AddCommand(listCmd)
 	pluginsCmd.AddCommand(removeCmd)

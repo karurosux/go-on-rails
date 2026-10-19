@@ -54,6 +54,7 @@ func Procs(procs []Proc) error {
 		cmd := exec.Command(p.Cmd, p.Args...)
 		cmd.Dir = p.Dir
 		cmd.Env = append(os.Environ(), p.Env...)
+		setProcAttrs(cmd) // own process group: stopping it takes its children too
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
 			return err
@@ -95,13 +96,12 @@ func Procs(procs []Proc) error {
 	return nil
 }
 
-// stopAll interrupts every process, then kills any that have not exited
-// after a grace period.
+// stopAll interrupts every process group, then kills any that have not
+// exited after a grace period. Signals go to the group, not just the direct
+// child, so wrappers like air and npm cannot leave their real servers behind.
 func stopAll(started []running) {
 	for _, r := range started {
-		if r.cmd.Process != nil {
-			_ = r.cmd.Process.Signal(os.Interrupt)
-		}
+		interruptProc(r.cmd)
 	}
 	deadline := time.After(5 * time.Second)
 	for _, r := range started {
@@ -115,10 +115,10 @@ func stopAll(started []running) {
 		select {
 		case <-exited:
 		case <-deadline:
-			if r.cmd.Process != nil {
-				_ = r.cmd.Process.Kill()
-			}
+			killProc(r.cmd)
 		}
+		// The group may have stragglers the direct child did not reap.
+		killProc(r.cmd)
 	}
 }
 

@@ -344,6 +344,29 @@ func init() {
 	}
 	modelCmd.Flags().BoolVar(&modelForce, "force", false, "overwrite existing files")
 
+	var obsForce bool
+	obsCmd := &cobra.Command{
+		Use:   "observability",
+		Short: "Set up error reporting (Sentry-compatible) and Prometheus /metrics",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			root, err := project.Root()
+			if err != nil {
+				return err
+			}
+			module, err := project.Module(root)
+			if err != nil {
+				return err
+			}
+			app, err := project.AppName(root)
+			if err != nil {
+				return err
+			}
+			return generator.Observability(root, module, app, obsForce)
+		},
+	}
+	obsCmd.Flags().BoolVar(&obsForce, "force", false, "overwrite existing files")
+
 	generateCmd.AddCommand(resourceCmd)
 	generateCmd.AddCommand(modelCmd)
 	generateCmd.AddCommand(migrationCmd)
@@ -352,6 +375,7 @@ func init() {
 	generateCmd.AddCommand(jobsCmd)
 	generateCmd.AddCommand(jobCmd)
 	generateCmd.AddCommand(realtimeCmd)
+	generateCmd.AddCommand(obsCmd)
 	generateCmd.AddCommand(mailerCmd)
 	generateCmd.AddCommand(uploadsCmd)
 	generateCmd.AddCommand(syncCmd)

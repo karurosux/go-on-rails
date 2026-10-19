@@ -1,0 +1,14 @@
+{
+  "name": "[[.Name]]",
+  "description": "TODO: one line describing what [[.Name]] generates",
+  "files": [
+    {"template": "templates/[[.Pkg]].go.tmpl", "path": "internal/[[.Pkg]]/[[.Pkg]].go"}
+  ],
+  "injections": [
+    {"file": "internal/routes/routes.go", "marker": "// gor:imports", "snippet": "templates/routes_import.snippet"},
+    {"file": "internal/routes/routes.go", "marker": "// gor:routes", "snippet": "templates/routes_register.snippet"}
+  ],
+  "env": {"sentinel": "[[.EnvPrefix]]_EXAMPLE", "file": "templates/env.tmpl"},
+  "postRun": ["tidy"],
+  "message": "[[.Name]] installed — try GET /api/[[.Name]]/ping, then edit the plugin's templates to make it yours"
+}

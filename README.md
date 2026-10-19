@@ -62,6 +62,7 @@ pages at `/posts`, with validation on both sides.
 | [Realtime](docs/realtime.md) | `g realtime` | SSE + Postgres NOTIFY, live-updating pages |
 | [Email](docs/mailer.md) | `g mailer` | SMTP mailers, templates, Mailpit dev catcher |
 | [File uploads](docs/uploads.md) | `g uploads` | disk storage, upload control, `file` fields |
+| [Observability](docs/observability.md) | `g observability` | Sentry-compatible error reports, Prometheus /metrics |
 | [Deployment](docs/deployment.md) | `build`, `build --image` | single binary, Docker image, worker, runtime config |
 | [AI agents](docs/ai.md) | `skills install` | AGENTS.md in every app, installable Claude Code skill |
 | [Generator plugins](docs/plugins.md) | `plugins install` | third-party generators (e.g. a Stripe pack) as `gor g <name>` |

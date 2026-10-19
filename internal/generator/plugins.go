@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/karurosux/go-on-rails/internal/inject"
 	"github.com/karurosux/go-on-rails/internal/render"
@@ -43,6 +44,14 @@ import (
 // args). "delims": "square" switches to [[ ]] for files that contain
 // runtime {{ }} syntax. postRun entries must be in the allowlist:
 // "tidy" (go mod tidy) or "sqlc" (sqlc generate + tidy).
+//
+// A file path may contain a literal {{timestamp}} token in its base name
+// (e.g. "migrations/{{timestamp}}_create_billing.sql"). It resolves to a
+// goose-style version (UTC now, bumped until unique in the directory) when
+// the plugin runs, so shipped migrations always sort after the app's
+// existing ones. If a file matching the rest of the name already exists,
+// that file is reused — re-running the plugin overwrites it (with --force)
+// instead of duplicating schema history.
 
 // Plugin is one installed generator plugin.
 type Plugin struct {
@@ -119,7 +128,10 @@ func LoadPlugins(projectRoot string) ([]Plugin, error) {
 			continue
 		}
 		for _, e := range entries {
-			if !e.IsDir() {
+			// A linked (dev) install is a symlink to the plugin's working
+			// directory, so resolve through it.
+			info, err := os.Stat(filepath.Join(dir, e.Name()))
+			if err != nil || !info.IsDir() {
 				continue
 			}
 			p, err := loadPlugin(filepath.Join(dir, e.Name()))
@@ -153,10 +165,15 @@ func loadPlugin(dir string) (Plugin, error) {
 }
 
 // InstallPlugin copies a plugin from a local path or clones it from a git
-// URL into the user (or project) plugin directory.
-func InstallPlugin(src string, project bool) (Plugin, error) {
+// URL into the user (or project) plugin directory. With link, the plugin
+// directory is symlinked instead of copied — a dev install where edits are
+// live, no reinstall needed.
+func InstallPlugin(src string, project, link bool) (Plugin, error) {
 	srcDir := src
 	isGit := strings.Contains(src, "://") || strings.HasPrefix(src, "git@") || strings.HasSuffix(src, ".git")
+	if isGit && link {
+		return Plugin{}, fmt.Errorf("--link needs a local path (clone the repo first, then link the clone)")
+	}
 	if isGit {
 		tmp, err := os.MkdirTemp("", "gor-plugin-*")
 		if err != nil {
@@ -189,6 +206,20 @@ func InstallPlugin(src string, project bool) (Plugin, error) {
 	dest := filepath.Join(base, p.Manifest.Name)
 	if err := os.RemoveAll(dest); err != nil {
 		return Plugin{}, err
+	}
+	if link {
+		abs, err := filepath.Abs(srcDir)
+		if err != nil {
+			return Plugin{}, err
+		}
+		if err := os.MkdirAll(base, 0o755); err != nil {
+			return Plugin{}, err
+		}
+		if err := os.Symlink(abs, dest); err != nil {
+			return Plugin{}, err
+		}
+		p.Dir = dest
+		return p, nil
 	}
 	if err := copyDir(srcDir, dest); err != nil {
 		return Plugin{}, err
@@ -232,11 +263,16 @@ type PluginData struct {
 func RunPlugin(p Plugin, root, module, appName string, args []string, force bool) error {
 	data := PluginData{Module: module, AppName: appName, Args: args}
 
+	paths := make([]string, len(p.Manifest.Files))
+	for i, f := range p.Manifest.Files {
+		paths[i] = resolvePluginPath(root, f.Path)
+	}
+
 	if !force {
 		var conflicts []string
-		for _, f := range p.Manifest.Files {
-			if render.Exists(filepath.Join(root, f.Path)) {
-				conflicts = append(conflicts, f.Path)
+		for _, path := range paths {
+			if render.Exists(filepath.Join(root, path)) {
+				conflicts = append(conflicts, path)
 			}
 		}
 		if len(conflicts) > 0 {
@@ -245,15 +281,15 @@ func RunPlugin(p Plugin, root, module, appName string, args []string, force bool
 		}
 	}
 
-	for _, f := range p.Manifest.Files {
+	for i, f := range p.Manifest.Files {
 		content, err := renderPluginTemplate(p.Dir, f.Template, f.Delims, data)
 		if err != nil {
 			return err
 		}
-		if err := render.Write(filepath.Join(root, f.Path), content, force); err != nil {
+		if err := render.Write(filepath.Join(root, paths[i]), content, force); err != nil {
 			return err
 		}
-		fmt.Printf("  create  %s\n", f.Path)
+		fmt.Printf("  create  %s\n", paths[i])
 	}
 
 	for _, in := range p.Manifest.Injections {
@@ -301,6 +337,49 @@ func RunPlugin(p Plugin, root, module, appName string, args []string, force bool
 		fmt.Println("\n" + p.Manifest.Message)
 	}
 	return nil
+}
+
+// resolvePluginPath expands a literal {{timestamp}} token in a plugin file
+// path's base name into a goose-style version: UTC now, bumped by a second
+// until no file in the target directory shares the version. When a file
+// already matches the name around the token, its path is returned instead,
+// so re-running a plugin targets the same migration rather than minting a
+// new one. Paths without the token pass through untouched.
+func resolvePluginPath(root, path string) string {
+	const token = "{{timestamp}}"
+	dir, base := filepath.Split(filepath.FromSlash(path))
+	i := strings.Index(base, token)
+	if i == -1 {
+		return path
+	}
+	prefix, suffix := base[:i], base[i+len(token):]
+
+	entries, _ := os.ReadDir(filepath.Join(root, dir))
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	for _, name := range names {
+		if len(name) > len(prefix)+len(suffix) &&
+			strings.HasPrefix(name, prefix) && strings.HasSuffix(name, suffix) {
+			return filepath.Join(dir, name)
+		}
+	}
+	ts := time.Now().UTC()
+	for {
+		version := ts.Format("20060102150405")
+		taken := false
+		for _, name := range names {
+			if strings.HasPrefix(name, prefix+version) {
+				taken = true
+				break
+			}
+		}
+		if !taken {
+			return filepath.Join(dir, prefix+version+suffix)
+		}
+		ts = ts.Add(time.Second)
+	}
 }
 
 func renderPluginTemplate(dir, name, delims string, data PluginData) ([]byte, error) {

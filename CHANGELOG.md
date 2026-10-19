@@ -1,6 +1,32 @@
 # Changelog
 
+## Unreleased
+
+- `gor dev` now refuses to start when the API port is already taken, naming
+  the squatting process (command, pid, start time). Previously Air's server
+  died on the bind while Vite kept proxying `/api` to the stale process, so
+  every new route 404'd with no hint why.
+- `gor dev` runs each process (air, npm, worker) in its own process group and
+  signals the whole group on shutdown, so stopping the wrappers can no longer
+  orphan the real server or Vite, leaving them squatting on the port.
+- `gor dev` warns when nothing is listening on the API port 60s after start —
+  Air stays alive even when the server it launched failed, which used to make
+  a dead dev session look healthy.
+
 ## v0.3.0
+
+- `gor plugins install --link`: dev installs — the plugin directory is
+  symlinked instead of copied, so edits apply immediately (rerun with
+  `--force`); `plugins list` shows the link target.
+- `gor plugins new <name>`: scaffold a generator plugin with a working
+  example and a README covering the manifest schema, markers, and dev
+  loop. `gor skills install` now also installs a `gor-plugins` skill that
+  teaches AI agents to author plugins.
+
+- `gor g observability`: vendor-neutral monitoring — 5xx error reports to
+  any Sentry-compatible service via `SENTRY_DSN` (Sentry, GlitchTip,
+  Bugsink; unset = disabled, `obs.CaptureError` for jobs), and Prometheus
+  request/runtime metrics at `/metrics`.
 
 - Auth gains the guest-only guard: `auth.RequireGuest` middleware (login
   and register now return 403 for signed-in users) and a `<RequireGuest />`

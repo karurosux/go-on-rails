@@ -27,6 +27,7 @@ go mod tidy
 
 echo "==> generators"
 "$GOR" g realtime
+"$GOR" g observability
 "$GOR" g auth
 "$GOR" g auth-emails
 "$GOR" g uploads
@@ -43,6 +44,10 @@ echo "==> generators"
 "$GOR" skills install --project
 "$GOR" plugins install "$ROOT/examples/plugins/sysinfo" --project
 "$GOR" g sysinfo
+"$GOR" plugins new sample
+"$GOR" plugins install ./gor-sample --project
+"$GOR" g sample
+rm -rf gor-sample
 
 echo "==> backend: vet + build + tests"
 go vet ./...
